@@ -1,12 +1,13 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
 import jwt
 import datetime
 import sqlite3
 import hashlib
 import os
+import random
 
-app = Flask(__name__, static_folder='static')
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 app.config['SECRET_KEY'] = 'your-secret-key-2024'
@@ -15,7 +16,7 @@ app.config['SECRET_KEY'] = 'your-secret-key-2024'
 def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    
+
     # Таблиця користувачів
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -27,7 +28,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # Таблиця робочих місць
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS workplaces (
@@ -39,7 +40,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
+
     # Таблиця приладів
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS devices (
@@ -54,264 +55,250 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    
-    # Таблиця доступу до РМ
+
+    # Таблиця налаштувань тривог
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS workplace_access (
+        CREATE TABLE IF NOT EXISTS alarm_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            workplace_id INTEGER,
-            user_id INTEGER
+            device_id INTEGER NOT NULL UNIQUE,
+            threshold REAL DEFAULT 100.0,
+            alarm_type TEXT DEFAULT 'value',
+            color_status TEXT DEFAULT 'green',
+            FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE
         )
     ''')
-    
-    # Тестові користувачі
-    cursor.execute("SELECT * FROM users WHERE email = 'admin@test.com'")
-    if not cursor.fetchone():
-        cursor.execute(
-            "INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)",
-            ('admin@test.com', hashlib.sha256('admin123'.encode()).hexdigest(), 'Адміністратор', 'admin')
-        )
-    
-    cursor.execute("SELECT * FROM users WHERE email = 'user@test.com'")
-    if not cursor.fetchone():
-        cursor.execute(
-            "INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)",
-            ('user@test.com', hashlib.sha256('user123'.encode()).hexdigest(), 'Користувач', 'user')
-        )
-    
+
+    # Додаємо тестові налаштування тривог для вже існуючих приладів
+    cursor.execute("SELECT id FROM devices")
+    devices = cursor.fetchall()
+    for (device_id,) in devices:
+        cursor.execute("SELECT id FROM alarm_settings WHERE device_id = ?", (device_id,))
+        if not cursor.fetchone():
+            cursor.execute('''
+                INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
+                VALUES (?, ?, ?, ?)
+            ''', (device_id, 100.0, 'value', 'green'))
+
     conn.commit()
     conn.close()
-    print("✅ База даних ініціалізована")
 
+init_db()
+
+# ========== ДОПОМІЖНІ ФУНКЦІЇ ==========
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def get_user_by_email(email):
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-    user = cursor.fetchone()
-    conn.close()
-    return user
+def verify_password(password, hashed):
+    return hash_password(password) == hashed
 
-def get_user_by_id(user_id):
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
-    conn.close()
-    return user
+def generate_token(user_id, email, role):
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }
+    return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
 
-def token_required(f):
-    from functools import wraps
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        if not token:
-            return jsonify({'success': False, 'error': 'Токен відсутній'}), 401
-        if token.startswith('Bearer '):
-            token = token[7:]
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user = get_user_by_id(data['user_id'])
-            if not current_user:
-                return jsonify({'success': False, 'error': 'Користувача не знайдено'}), 401
-        except:
-            return jsonify({'success': False, 'error': 'Невірний токен'}), 401
-        return f(current_user, *args, **kwargs)
-    return decorated
-
-# ========== API РОУТИ ==========
-@app.route('/api/auth/login', methods=['POST'])
-def login():
+def decode_token(token):
     try:
-        data = request.get_json()
-        email = data.get('email', '').strip().lower()
-        password = data.get('password', '')
-        
-        user = get_user_by_email(email)
-        if not user or hash_password(password) != user['password']:
-            return jsonify({'success': False, 'error': 'Невірний email або пароль'}), 401
-        
-        token = jwt.encode({
-            'user_id': user['id'],
-            'email': user['email'],
-            'role': user['role'],
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
-        }, app.config['SECRET_KEY'], algorithm='HS256')
-        
-        return jsonify({
-            'success': True,
-            'token': token,
-            'user': {
-                'id': user['id'],
-                'email': user['email'],
-                'full_name': user['full_name'],
-                'role': user['role']
-            }
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        return payload
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
 
-@app.route('/api/users', methods=['GET'])
-@token_required
-def get_users(current_user):
-    if current_user['role'] != 'admin':
-        return jsonify({'success': False, 'error': 'Доступ заборонено'}), 403
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, email, full_name, role, created_at FROM users")
-    users = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return jsonify({'success': True, 'users': users})
+def get_user_from_token():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return None
+    parts = auth_header.split()
+    if parts[0] != 'Bearer' or len(parts) != 2:
+        return None
+    return decode_token(parts[1])
 
-@app.route('/api/users/<int:user_id>', methods=['PUT'])
-@token_required
-def update_user(current_user, user_id):
-    if current_user['role'] != 'admin':
-        return jsonify({'success': False, 'error': 'Доступ заборонено'}), 403
-    
-    data = request.get_json()
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    
-    updates = []
-    params = []
-    if 'full_name' in data:
-        updates.append("full_name = ?")
-        params.append(data['full_name'])
-    if 'role' in data:
-        updates.append("role = ?")
-        params.append(data['role'])
-    if 'password' in data and data['password']:
-        updates.append("password = ?")
-        params.append(hash_password(data['password']))
-    
-    if updates:
-        params.append(user_id)
-        cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
-        conn.commit()
-    
-    conn.close()
-    return jsonify({'success': True, 'message': 'Користувача оновлено'})
-
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
-@token_required
-def delete_user(current_user, user_id):
-    if current_user['role'] != 'admin':
-        return jsonify({'success': False, 'error': 'Доступ заборонено'}), 403
-    if user_id == current_user['id']:
-        return jsonify({'success': False, 'error': 'Не можна видалити самого себе'}), 400
-    
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
-    conn.close()
-    return jsonify({'success': True, 'message': 'Користувача видалено'})
-
-@app.route('/api/users', methods=['POST'])
-@token_required
-def create_user(current_user):
-    if current_user['role'] != 'admin':
-        return jsonify({'success': False, 'error': 'Доступ заборонено'}), 403
-    
-    data = request.get_json()
+# ========== МАРШРУТИ АВТОРИЗАЦІЇ ==========
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
     email = data.get('email')
     password = data.get('password')
     full_name = data.get('full_name')
-    role = data.get('role', 'user')
-    
+
     if not email or not password or not full_name:
-        return jsonify({'success': False, 'error': 'Всі поля обов\'язкові'}), 400
-    
+        return jsonify({'error': 'Всі поля обов\'язкові'}), 400
+
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
-    if cursor.fetchone():
+    try:
+        cursor.execute('''
+            INSERT INTO users (email, password, full_name, role)
+            VALUES (?, ?, ?, ?)
+        ''', (email, hash_password(password), full_name, 'user'))
+        conn.commit()
+        return jsonify({'message': 'Реєстрація успішна'}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Email вже існує'}), 400
+    finally:
         conn.close()
-        return jsonify({'success': False, 'error': 'Email вже використовується'}), 400
-    
-    cursor.execute(
-        "INSERT INTO users (email, password, full_name, role) VALUES (?, ?, ?, ?)",
-        (email, hash_password(password), full_name, role)
-    )
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, email, password, role FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user and verify_password(password, user[2]):
+        token = generate_token(user[0], user[1], user[3])
+        return jsonify({'token': token, 'user': {'id': user[0], 'email': user[1], 'role': user[3]}})
+    else:
+        return jsonify({'error': 'Невірний email або пароль'}), 401
+# ========== МАРШРУТИ РОБОЧИХ МІСЦЬ ТА ПРИЛАДІВ ==========
+@app.route('/api/workplaces', methods=['GET', 'POST'])
+def workplaces():
+    user = get_user_from_token()
+    if not user:
+        return jsonify({'error': 'Неавторизований'}), 401
+
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    if request.method == 'GET':
+        cursor.execute('SELECT * FROM workplaces')
+        workplaces_list = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(workplaces_list)
+
+    if request.method == 'POST':
+        data = request.json
+        cursor.execute('''
+            INSERT INTO workplaces (name, location, description, created_by)
+            VALUES (?, ?, ?, ?)
+        ''', (data['name'], data['location'], data.get('description', ''), user['user_id']))
+        conn.commit()
+        new_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'id': new_id, 'message': 'Робоче місце створено'}), 201
+
+@app.route('/api/devices', methods=['GET', 'POST'])
+def devices():
+    user = get_user_from_token()
+    if not user:
+        return jsonify({'error': 'Неавторизований'}), 401
+
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    if request.method == 'GET':
+        cursor.execute('SELECT * FROM devices')
+        devices_list = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(devices_list)
+
+    if request.method == 'POST':
+        data = request.json
+        cursor.execute('''
+            INSERT INTO devices (name, type, ip, port, channel, unit, workplace_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (data['name'], data['type'], data['ip'], data['port'], data.get('channel'), data.get('unit'), data.get('workplace_id')))
+        conn.commit()
+        device_id = cursor.lastrowid
+        # Створюємо налаштування тривоги для нового приладу
+        cursor.execute('''
+            INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
+            VALUES (?, ?, ?, ?)
+        ''', (device_id, 100.0, 'value', 'green'))
+        conn.commit()
+        conn.close()
+        return jsonify({'id': device_id, 'message': 'Прилад додано'}), 201
+
+# ========== МАРШРУТИ ДЛЯ ТРИВОГ ==========
+@app.route('/api/devices_with_alarms')
+def devices_with_alarms():
+   # user = get_user_from_token()
+    #if not user:
+     #   return jsonify({'error': 'Неавторизований'}), 401
+
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT d.id, d.name, d.type, d.unit,
+               COALESCE(a.threshold, 100.0) as threshold,
+               COALESCE(a.alarm_type, 'value') as alarm_type,
+               COALESCE(a.color_status, 'green') as color_setting
+        FROM devices d
+        LEFT JOIN alarm_settings a ON d.id = a.device_id
+    ''')
+    devices = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for dev in devices:
+        current_value = round(random.uniform(0, dev['threshold'] * 1.5), 2)
+        if current_value > dev['threshold']:
+            color = 'red'
+        elif current_value > dev['threshold'] * 0.7:
+            color = 'orange'
+        else:
+            color = 'green'
+
+        result.append({
+            'id': dev['id'],
+            'name': dev['name'],
+            'type': dev['type'],
+            'unit': dev['unit'] or '',
+            'current_value': current_value,
+            'threshold': dev['threshold'],
+            'alarm_type': dev['alarm_type'],
+            'color': color,
+            'color_setting': dev['color_setting']
+        })
+    return jsonify(result)
+
+@app.route('/api/alarm_settings/<int:device_id>', methods=['PUT'])
+def update_alarm_settings(device_id):
+    #user = get_user_from_token()
+    #if not user:
+     #   return jsonify({'error': 'Неавторизований'}), 401
+
+    data = request.json
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE alarm_settings
+        SET threshold = ?, alarm_type = ?, color_status = ?
+        WHERE device_id = ?
+    ''', (data['threshold'], data['alarm_type'], data['color_status'], device_id))
+    if cursor.rowcount == 0:
+        cursor.execute('''
+            INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
+            VALUES (?, ?, ?, ?)
+        ''', (device_id, data['threshold'], data['alarm_type'], data['color_status']))
     conn.commit()
     conn.close()
-    return jsonify({'success': True, 'message': 'Користувача додано'})
+    return jsonify({'status': 'success'})
 
-@app.route('/api/workplaces', methods=['GET'])
-@token_required
-def get_workplaces(current_user):
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    if current_user['role'] == 'admin':
-        cursor.execute("SELECT * FROM workplaces ORDER BY id")
-    else:
-        cursor.execute('''
-            SELECT w.* FROM workplaces w
-            JOIN workplace_access wa ON w.id = wa.workplace_id
-            WHERE wa.user_id = ?
-            ORDER BY w.id
-        ''', (current_user['id'],))
-    
-    workplaces = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return jsonify({'success': True, 'workplaces': workplaces})
+@app.route('/alarms')
+@app.route('/alarms/')
+def alarms_page():
+    return render_template('alarms.html')
 
-@app.route('/api/devices', methods=['GET'])
-@token_required
-def get_devices(current_user):
-    conn = sqlite3.connect('database.db')
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    if current_user['role'] == 'admin':
-        cursor.execute('''
-            SELECT d.*, w.name as workplace_name 
-            FROM devices d
-            LEFT JOIN workplaces w ON d.workplace_id = w.id
-            ORDER BY d.id
-        ''')
-    else:
-        cursor.execute('''
-            SELECT d.*, w.name as workplace_name 
-            FROM devices d
-            JOIN workplaces w ON d.workplace_id = w.id
-            JOIN workplace_access wa ON w.id = wa.workplace_id
-            WHERE wa.user_id = ?
-            ORDER BY d.id
-        ''', (current_user['id'],))
-    
-    devices = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return jsonify({'success': True, 'devices': devices})
-
+# ========== СТАТИЧНІ ФАЙЛИ ==========
 @app.route('/')
-def serve_index():
+def index():
     return send_from_directory('static', 'index.html')
 
 @app.route('/<path:path>')
-def serve_static(path):
+def static_files(path):
     return send_from_directory('static', path)
 
-@app.route('/favicon.ico')
-def favicon():
-    return '', 204
-
 if __name__ == '__main__':
-    init_db()
-    print("\n" + "="*50)
-    print("🚀 СЕРВЕР ЗАПУЩЕНО")
-    print("="*50)
-    print(f"🌐 http://localhost:5002")
-    print(f"🔑 admin@test.com / admin123")
-    print(f"👤 user@test.com / user123")
-    print("="*50 + "\n")
     app.run(debug=True, host='0.0.0.0', port=5002)
