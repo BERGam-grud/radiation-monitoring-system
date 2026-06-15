@@ -460,20 +460,6 @@ function renderFilteredDevices() {
     }
 }
 
-// ========== НАЛАШТУВАННЯ ТРИВОГ ==========
-function saveAlarmSettings() {
-    localStorage.setItem('warning', document.getElementById('warningThreshold').value);
-    localStorage.setItem('alarm', document.getElementById('alarmThreshold').value);
-    alert('Налаштування збережено!');
-}
-
-function loadAlarmSettings() {
-    const warning = localStorage.getItem('warning');
-    const alarm = localStorage.getItem('alarm');
-    if (warning) document.getElementById('warningThreshold').value = warning;
-    if (alarm) document.getElementById('alarmThreshold').value = alarm;
-}
-
 // ========== ГРАФІК ЗА ОСТАННЮ ГОДИНУ ==========
 function showHourGraph(deviceId) {
     const device = allDevices.find(d => d.id === deviceId);
@@ -553,6 +539,76 @@ function exportToPDF(deviceId) {
     win.document.write(printContent);
     win.document.close();
     win.print();
+}
+
+// ========== НОВІ ФУНКЦІЇ ДЛЯ РОЗШИРЕНОГО НАЛАШТУВАННЯ ТРИВОГ ==========
+let alarmDevicesData = [];
+
+async function loadAlarmDevices() {
+    try {
+        const response = await fetch('/api/devices_with_alarms', {
+            headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+        });
+        if (!response.ok) throw new Error('Unauthorized');
+        alarmDevicesData = await response.json();
+        applyAlarmFilters();
+    } catch (error) {
+        console.error('Помилка завантаження:', error);
+        const tbody = document.getElementById('alarmDevicesTableBody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8">Помилка завантаження даних</td></tr>';
+    }
+}
+
+function renderAlarmTable(data) {
+    const tbody = document.getElementById('alarmDevicesTableBody');
+    if (!tbody) return;
+    if (data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8">Немає приладів</td></tr>';
+        return;
+    }
+    tbody.innerHTML = data.map(device => `
+        <tr class="${device.color === 'red' ? 'red-row' : (device.color === 'orange' ? 'orange-row' : 'green-row')}">
+            <td>${device.id}</td>
+            <td>${device.name}</td>
+            <td>${device.type}</td>
+            <td><strong>${device.current_value}</strong></td>
+            <td>${device.unit}</td>
+            <td>${device.threshold}</td>
+            <td><span class="status-dot ${device.color}"></span> ${device.color === 'red' ? 'ТРИВОГА' : (device.color === 'orange' ? 'Увага' : 'Норма')}</td>
+            <td><button class="action-btn" onclick="openAlarmModal(${device.id}, '${device.name}', ${device.threshold}, '${device.alarm_type}', '${device.color_setting}')">⚙️ Налаштувати</button></td>
+        </tr>
+    `).join('');
+}
+
+function applyAlarmFilters() {
+    let filtered = [...alarmDevicesData];
+    const typeFilter = document.getElementById('alarmFilterType')?.value || 'all';
+    const colorFilter = document.getElementById('alarmFilterColor')?.value || 'all';
+    const sortBy = document.getElementById('alarmSortBy')?.value || 'type';
+    if (typeFilter !== 'all') filtered = filtered.filter(d => d.type === typeFilter);
+    if (colorFilter !== 'all') filtered = filtered.filter(d => d.color === colorFilter);
+    if (sortBy === 'type') filtered.sort((a,b) => a.type.localeCompare(b.type));
+    if (sortBy === 'current_value') filtered.sort((a,b) => b.current_value - a.current_value);
+    if (sortBy === 'threshold') filtered.sort((a,b) => b.threshold - a.threshold);
+    renderAlarmTable(filtered);
+}
+
+function openAlarmModal(deviceId, deviceName, currentThreshold, alarmType, colorSetting) {
+    const newThreshold = prompt(`Введіть новий поріг тривоги для ${deviceName} (поточний: ${currentThreshold}):`, currentThreshold);
+    if (newThreshold !== null && !isNaN(parseFloat(newThreshold))) {
+        fetch(`/api/alarm_settings/${deviceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify({ 
+                threshold: parseFloat(newThreshold), 
+                alarm_type: alarmType, 
+                color_status: colorSetting 
+            })
+        })
+        .then(res => res.json())
+        .then(() => loadAlarmDevices())
+        .catch(err => alert('Помилка збереження налаштувань'));
+    }
 }
 
 // ========== ВІДОБРАЖЕННЯ ==========
@@ -679,11 +735,39 @@ function renderMainApp() {
                     </div>
                     <div id="window-permissions" class="window">
                         <div class="window-header"><div class="window-title">🔐 ПРАВА ДОСТУПУ</div><button class="close-btn" onclick="closeWindow('permissions')">✕</button></div>
-                        <div class="window-content"><table class="permissions-table"><thead><tr><th>РОЛЬ</th><th>ДОСТУП ДО РМ</th><th>РЕДАГУВАННЯ</th><th>НАЛАШТУВАННЯ</th><th>АДМІН ПАНЕЛЬ</th><th>ЕКСПОРТ</th></tr></thead><tbody id="permissionsTableBody"></tbody><table></div>
+                        <div class="window-content"><table class="permissions-table"><thead><tr><th>РОЛЬ</th><th>ДОСТУП ДО РМ</th><th>РЕДАГУВАННЯ</th><th>НАЛАШТУВАННЯ</th><th>АДМІН ПАНЕЛЬ</th><th>ЕКСПОРТ</th></tr></thead><tbody id="permissionsTableBody"></tbody></table></div>
                     </div>
                     <div id="window-alarms" class="window">
-                        <div class="window-header"><div class="window-title">⚠️ НАЛАШТУВАННЯ ТРИВОГ</div><button class="close-btn" onclick="closeWindow('alarms')">✕</button></div>
-                        <div class="window-content"><div class="form-group"><label>ПОПЕРЕДЖЕННЯ (ЖОВТИЙ) - мкЗв/год</label><input type="number" id="warningThreshold" step="0.01" value="0.3"></div><div class="form-group"><label>НЕБЕЗПЕКА (ЧЕРВОНИЙ) - мкЗв/год</label><input type="number" id="alarmThreshold" step="0.01" value="0.5"></div><button class="btn-primary" onclick="saveAlarmSettings()">💾 ЗБЕРЕГТИ</button></div>
+                        <div class="window-header"><div class="window-title">⚠️ НАЛАШТУВАННЯ ТРИВОГ ПРИЛАДІВ</div><button class="close-btn" onclick="closeWindow('alarms')">✕</button></div>
+                        <div class="window-content">
+                            <div class="filter-bar">
+                                <select id="alarmFilterType" class="filter-select" onchange="applyAlarmFilters()">
+                                    <option value="all">Всі типи</option>
+                                    <option value="gamma_detector">Гама-детектор</option>
+                                    <option value="spectrometric">Спектрометричний</option>
+                                    <option value="vfu">ВФУ</option>
+                                </select>
+                                <select id="alarmFilterColor" class="filter-select" onchange="applyAlarmFilters()">
+                                    <option value="all">Всі кольори</option>
+                                    <option value="green">🟢 Зелений</option>
+                                    <option value="orange">🟠 Оранжевий</option>
+                                    <option value="red">🔴 Червоний</option>
+                                </select>
+                                <select id="alarmSortBy" class="filter-select" onchange="applyAlarmFilters()">
+                                    <option value="type">Сортувати за типом</option>
+                                    <option value="current_value">Сортувати за значенням</option>
+                                    <option value="threshold">Сортувати за порогом</option>
+                                </select>
+                            </div>
+                            <div style="overflow-x:auto;">
+                                <table class="devices-table" id="alarmDevicesTable">
+                                    <thead>
+                                        <tr><th>ID</th><th>Назва</th><th>Тип</th><th>Поточне значення</th><th>Одиниці</th><th>Поріг тривоги</th><th>Статус</th><th>Дія</th></tr>
+                                    </thead>
+                                    <tbody id="alarmDevicesTableBody"><tr><td colspan="8" style="text-align:center">Завантаження...</td></tr></tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -696,8 +780,7 @@ function renderMainApp() {
     initAdminMenu();
     loadNotifications();
     generateDeviceNotifications();
-    loadAlarmConfigs();
-    loadAlarmSettings();
+    // не викликаємо старі функції тривог, бо використовуємо нові
 }
 
 function renderWorkplaces() {
@@ -797,6 +880,7 @@ function openWindow(id) {
     if (id === 'users') renderUsersListTable();
     if (id === 'permissions') renderPermissionsTable();
     if (id === 'devices') renderFilteredDevices();
+    if (id === 'alarms') loadAlarmDevices();
 }
 
 function closeWindow(id) { 
@@ -864,7 +948,7 @@ function handleLogin() {
     })
     .then(function(res) { return res.json(); })
     .then(function(data) {
-        if (data.success) {
+        if (data.token) {
             authToken = data.token;
             currentUser = data.user;
             localStorage.setItem('authToken', authToken);
@@ -939,191 +1023,11 @@ window.deleteUser = deleteUser;
 window.showAddUserModal = showAddUserModal;
 window.addUser = addUser;
 window.closeModal = closeModal;
-window.saveAlarmSettings = saveAlarmSettings;
 window.toggleAdminMenu = toggleAdminMenu;
 window.markNotificationRead = markNotificationRead;
 window.clearAllNotifications = clearAllNotifications;
 window.toggleNotifications = toggleNotifications;
-
-// ========== НАЛАШТУВАННЯ ТРИВОГ ДЛЯ ПРИЛАДІВ ==========
-let alarmConfigs = [];
-
-function loadAlarmConfigs() {
-    const saved = localStorage.getItem('alarmConfigs');
-    if (saved) {
-        alarmConfigs = JSON.parse(saved);
-    } else {
-        // Ініціалізація налаштувань за замовчуванням для всіх приладів
-        alarmConfigs = allDevices.map(device => ({
-            deviceId: device.id,
-            deviceName: device.name,
-            deviceType: device.type,
-            enabled: true,
-            warningThreshold: 0.3,
-            alarmThreshold: 0.5,
-            warningColor: '#fbbf24',
-            alarmColor: '#f87171',
-            normalColor: '#4ade80',
-            notificationEnabled: true,
-            lastTriggered: null
-        }));
-        saveAlarmConfigs();
-    }
-    renderAlarmConfigs();
-}
-
-function saveAlarmConfigs() {
-    localStorage.setItem('alarmConfigs', JSON.stringify(alarmConfigs));
-}
-
-function renderAlarmConfigs() {
-    const container = document.getElementById('alarmConfigsList');
-    if (!container) return;
-    
-    const typeFilter = document.getElementById('alarmFilterType')?.value || 'all';
-    const statusFilter = document.getElementById('alarmFilterStatus')?.value || 'all';
-    
-    let filtered = [...alarmConfigs];
-    if (typeFilter !== 'all') filtered = filtered.filter(c => c.deviceType === typeFilter);
-    if (statusFilter !== 'all') filtered = filtered.filter(c => statusFilter === 'enabled' ? c.enabled : !c.enabled);
-    
-    container.innerHTML = filtered.map(config => {
-        const device = allDevices.find(d => d.id === config.deviceId);
-        const currentValue = device ? device.value : 0;
-        const isTriggered = config.enabled && currentValue >= config.alarmThreshold;
-        const isWarning = config.enabled && currentValue >= config.warningThreshold && currentValue < config.alarmThreshold;
-        
-        return `
-            <div class="alarm-config-panel">
-                <div class="alarm-config-header" onclick="toggleAlarmConfig('${config.deviceId}')">
-                    <div>
-                        <span class="alarm-config-title">${deviceTypes[config.deviceType].icon} ${config.deviceName}</span>
-                        <span style="margin-left: 10px; font-size: 12px; color: #8a8a9a;">${deviceTypes[config.deviceType].name}</span>
-                    </div>
-                    <div>
-                        <span class="alarm-config-status ${config.enabled ? 'enabled' : 'disabled'}">${config.enabled ? 'АКТИВНО' : 'ВИМКНЕНО'}</span>
-                        ${isTriggered ? '<span style="background:#f87171; padding:3px 8px; border-radius:20px; margin-left:10px;">🔴 ТРИВОГА!</span>' : ''}
-                        ${isWarning ? '<span style="background:#fbbf24; padding:3px 8px; border-radius:20px; margin-left:10px;">🟡 ПОПЕРЕДЖЕННЯ</span>' : ''}
-                    </div>
-                </div>
-                <div class="alarm-config-content" id="alarm-config-${config.deviceId}">
-                    <div class="form-group">
-                        <label>Статус тривоги</label>
-                        <select onchange="updateAlarmConfig('${config.deviceId}', 'enabled', this.value === 'true')">
-                            <option value="true" ${config.enabled ? 'selected' : ''}>✅ Активовано</option>
-                            <option value="false" ${!config.enabled ? 'selected' : ''}>❌ Вимкнено</option>
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Поріг попередження (Жовтий) - ${deviceTypes[config.deviceType].unit}</label>
-                            <input type="number" step="0.01" value="${config.warningThreshold}" onchange="updateAlarmConfig('${config.deviceId}', 'warningThreshold', parseFloat(this.value))">
-                        </div>
-                        <div class="form-group">
-                            <label>Поріг тривоги (Червоний) - ${deviceTypes[config.deviceType].unit}</label>
-                            <input type="number" step="0.01" value="${config.alarmThreshold}" onchange="updateAlarmConfig('${config.deviceId}', 'alarmThreshold', parseFloat(this.value))">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Колір норми</label>
-                            <input type="color" value="${config.normalColor}" onchange="updateAlarmConfig('${config.deviceId}', 'normalColor', this.value)">
-                            <div class="alarm-color-preview normal" style="background:${config.normalColor}; margin-top:5px;"></div>
-                        </div>
-                        <div class="form-group">
-                            <label>Колір попередження</label>
-                            <input type="color" value="${config.warningColor}" onchange="updateAlarmConfig('${config.deviceId}', 'warningColor', this.value)">
-                            <div class="alarm-color-preview warning" style="background:${config.warningColor}; margin-top:5px;"></div>
-                        </div>
-                        <div class="form-group">
-                            <label>Колір тривоги</label>
-                            <input type="color" value="${config.alarmColor}" onchange="updateAlarmConfig('${config.deviceId}', 'alarmColor', this.value)">
-                            <div class="alarm-color-preview danger" style="background:${config.alarmColor}; margin-top:5px;"></div>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Сповіщення при тривозі</label>
-                        <select onchange="updateAlarmConfig('${config.deviceId}', 'notificationEnabled', this.value === 'true')">
-                            <option value="true" ${config.notificationEnabled ? 'selected' : ''}>🔔 Ввімкнено</option>
-                            <option value="false" ${!config.notificationEnabled ? 'selected' : ''}>🔕 Вимкнено</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Поточне значення</label>
-                        <div style="padding: 8px; background: #1e1e2e; border-radius: 6px;">
-                            <span style="font-size: 20px; font-weight: bold; color: ${currentValue >= config.alarmThreshold ? config.alarmColor : (currentValue >= config.warningThreshold ? config.warningColor : config.normalColor)}">
-                                ${currentValue} ${deviceTypes[config.deviceType].unit}
-                            </span>
-                        </div>
-                    </div>
-                    <button class="action-btn" onclick="testAlarm('${config.deviceId}')">🔔 Тестувати тривогу</button>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function toggleAlarmConfig(deviceId) {
-    const content = document.getElementById(`alarm-config-${deviceId}`);
-    if (content) {
-        content.classList.toggle('show');
-    }
-}
-
-function updateAlarmConfig(deviceId, field, value) {
-    const config = alarmConfigs.find(c => c.deviceId === deviceId);
-    if (config) {
-        config[field] = value;
-        saveAlarmConfigs();
-        renderAlarmConfigs();
-        // Оновлюємо відображення кольорів на приладах
-        updateDeviceColors();
-    }
-}
-
-function updateDeviceColors() {
-    for (const device of allDevices) {
-        const config = alarmConfigs.find(c => c.deviceId === device.id);
-        if (config && config.enabled) {
-            if (device.value >= config.alarmThreshold) {
-                device.status = 'danger';
-                if (config.notificationEnabled && device.lastNotification !== Date.now()) {
-                    addNotification('error', '⚠️ ТРИВОГА!', `${device.workplace}: ${device.name} - значення ${device.value} перевищило поріг ${config.alarmThreshold} ${device.unit}`, device.id);
-                    device.lastNotification = Date.now();
-                }
-            } else if (device.value >= config.warningThreshold) {
-                device.status = 'warning';
-            } else {
-                device.status = 'normal';
-            }
-        }
-    }
-    renderWorkplaces();
-    renderFilteredDevices();
-}
-
-function testAlarm(deviceId) {
-    const config = alarmConfigs.find(c => c.deviceId === deviceId);
-    const device = allDevices.find(d => d.id === deviceId);
-    if (config && device) {
-        addNotification('error', '🔴 ТЕСТОВА ТРИВОГА', `Тест: ${device.name} - перевірка системи сповіщення`, device.id);
-        alert(`✅ Тест тривоги для ${device.name} виконано!`);
-    }
-}
-
-function saveAllAlarmConfigs() {
-    saveAlarmConfigs();
-    alert('✅ Всі налаштування тривог збережено!');
-}
-
-function filterAlarmConfigs() {
-    renderAlarmConfigs();
-}
-
-// Перевизначення функції перевірки статусу з урахуванням індивідуальних налаштувань
-function checkDeviceStatus(device, config) {
-    if (!config || !config.enabled) return 'normal';
-    if (device.value >= config.alarmThreshold) return 'danger';
-    if (device.value >= config.warningThreshold) return 'warning';
-    return 'normal';
-}
+// Нові функції для тривог
+window.loadAlarmDevices = loadAlarmDevices;
+window.applyAlarmFilters = applyAlarmFilters;
+window.openAlarmModal = openAlarmModal;
