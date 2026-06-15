@@ -1,4 +1,4 @@
-<details> <summary>Тут код для файлу app.py (натисніть, щоб розгорнути)</summary>
+
 from flask import Flask, render_template, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -148,4 +148,4 @@ def dashboard():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-</details>
+
