@@ -17,7 +17,6 @@ def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
-    # Таблиця користувачів
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,7 +28,6 @@ def init_db():
         )
     ''')
 
-    # Таблиця робочих місць
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS workplaces (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +39,6 @@ def init_db():
         )
     ''')
 
-    # Таблиця приладів
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS devices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +53,6 @@ def init_db():
         )
     ''')
 
-    # Таблиця налаштувань тривог
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS alarm_settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +64,6 @@ def init_db():
         )
     ''')
 
-    # Додаємо тестові налаштування тривог для вже існуючих приладів
     cursor.execute("SELECT id FROM devices")
     devices = cursor.fetchall()
     for (device_id,) in devices:
@@ -158,6 +153,7 @@ def login():
         return jsonify({'token': token, 'user': {'id': user[0], 'email': user[1], 'role': user[3]}})
     else:
         return jsonify({'error': 'Невірний email або пароль'}), 401
+
 # ========== МАРШРУТИ РОБОЧИХ МІСЦЬ ТА ПРИЛАДІВ ==========
 @app.route('/api/workplaces', methods=['GET', 'POST'])
 def workplaces():
@@ -210,7 +206,6 @@ def devices():
         ''', (data['name'], data['type'], data['ip'], data['port'], data.get('channel'), data.get('unit'), data.get('workplace_id')))
         conn.commit()
         device_id = cursor.lastrowid
-        # Створюємо налаштування тривоги для нового приладу
         cursor.execute('''
             INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
             VALUES (?, ?, ?, ?)
@@ -222,9 +217,10 @@ def devices():
 # ========== МАРШРУТИ ДЛЯ ТРИВОГ ==========
 @app.route('/api/devices_with_alarms')
 def devices_with_alarms():
-   # user = get_user_from_token()
-    #if not user:
-     #   return jsonify({'error': 'Неавторизований'}), 401
+    # Для тестування перевірку токена тимчасово вимкнено
+    # user = get_user_from_token()
+    # if not user:
+    #     return jsonify({'error': 'Неавторизований'}), 401
 
     conn = sqlite3.connect('database.db')
     conn.row_factory = sqlite3.Row
@@ -265,9 +261,10 @@ def devices_with_alarms():
 
 @app.route('/api/alarm_settings/<int:device_id>', methods=['PUT'])
 def update_alarm_settings(device_id):
-    #user = get_user_from_token()
-    #if not user:
-     #   return jsonify({'error': 'Неавторизований'}), 401
+    # Для тестування перевірку токена тимчасово вимкнено
+    # user = get_user_from_token()
+    # if not user:
+    #     return jsonify({'error': 'Неавторизований'}), 401
 
     data = request.json
     conn = sqlite3.connect('database.db')
@@ -287,7 +284,6 @@ def update_alarm_settings(device_id):
     return jsonify({'status': 'success'})
 
 @app.route('/alarms')
-@app.route('/alarms/')
 def alarms_page():
     return render_template('alarms.html')
 
