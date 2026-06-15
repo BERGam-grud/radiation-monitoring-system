@@ -1,151 +1,300 @@
-
-from flask import Flask, render_template, jsonify, request
-from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
-import json
+from flask import Flask, request, jsonify, send_from_directory, render_template
+from flask_cors import CORS
+import jwt
+import datetime
+import sqlite3
+import hashlib
+import os
 import random
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+app = Flask(__name__, static_folder='static', template_folder='templates')
+CORS(app)
 
-# Моделі даних
-class Device(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(50), nullable=False)
-    value = db.Column(db.Float, default=0)
-    status = db.Column(db.String(20), default='normal')
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+app.config['SECRET_KEY'] = 'your-secret-key-2024'
 
-class AlarmSetting(db.Model):
-    __tablename__ = 'alarm_settings'
-    id = db.Column(db.Integer, primary_key=True)
-    device_id = db.Column(db.Integer, db.ForeignKey('device.id'), nullable=False)
-    threshold = db.Column(db.Float, default=100.0)
-    alarm_type = db.Column(db.String(20), default='value')
-    color_status = db.Column(db.String(20), default='green')
-    device = db.relationship('Device', backref='alarm_settings')
+# ========== БАЗА ДАНИХ ==========
+def init_db():
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
 
-# Створення таблиць
-with app.app_context():
-    db.create_all()
-    # Додавання тестових приладів, якщо їх немає
-    if Device.query.count() == 0:
-        test_devices = [
-            Device(name='Gamma Detector 1', type='gamma_detector', value=120.5),
-            Device(name='Gamma Detector 2', type='gamma_detector', value=75.2),
-            Device(name='Spectrometric 1', type='spectrometric', value=3.8),
-            Device(name='VFU 1', type='vfu', value=45.3)
-        ]
-        for device in test_devices:
-            db.session.add(device)
-        db.session.commit()
-        
-        # Додаємо налаштування тривог для тестових приладів
-        for device in Device.query.all():
-            alarm = AlarmSetting(device_id=device.id, threshold=100.0, alarm_type='value', color_status='green')
-            db.session.add(alarm)
-        db.session.commit()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            role TEXT DEFAULT 'user',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
 
-# ========== НОВІ МАРШРУТИ ДЛЯ ТРИВОГ ==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS workplaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            location TEXT NOT NULL,
+            description TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
 
-# API: отримати всі прилади з їхніми поточними даними
-@app.route('/api/devices')
-def api_devices():
-    devices = Device.query.all()
-    devices_data = []
-    for device in devices:
-        # Отримуємо налаштування тривоги для приладу
-        alarm = AlarmSetting.query.filter_by(device_id=device.id).first()
-        threshold = alarm.threshold if alarm else 100.0
-        alarm_type = alarm.alarm_type if alarm else 'value'
-        color_setting = alarm.color_status if alarm else 'green'
-        
-        # Визначаємо колір на основі поточного значення
-        if device.value > threshold:
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            ip TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            channel TEXT,
+            unit TEXT,
+            workplace_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS alarm_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id INTEGER NOT NULL UNIQUE,
+            threshold REAL DEFAULT 100.0,
+            alarm_type TEXT DEFAULT 'value',
+            color_status TEXT DEFAULT 'green',
+            FOREIGN KEY (device_id) REFERENCES devices (id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute("SELECT id FROM devices")
+    devices = cursor.fetchall()
+    for (device_id,) in devices:
+        cursor.execute("SELECT id FROM alarm_settings WHERE device_id = ?", (device_id,))
+        if not cursor.fetchone():
+            cursor.execute('''
+                INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
+                VALUES (?, ?, ?, ?)
+            ''', (device_id, 100.0, 'value', 'green'))
+
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# ========== ДОПОМІЖНІ ФУНКЦІЇ ==========
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password, hashed):
+    return hash_password(password) == hashed
+
+def generate_token(user_id, email, role):
+    payload = {
+        'user_id': user_id,
+        'email': email,
+        'role': role,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }
+    return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+
+def decode_token(token):
+    try:
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        return payload
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+
+def get_user_from_token():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return None
+    parts = auth_header.split()
+    if parts[0] != 'Bearer' or len(parts) != 2:
+        return None
+    return decode_token(parts[1])
+
+# ========== МАРШРУТИ АВТОРИЗАЦІЇ ==========
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    full_name = data.get('full_name')
+
+    if not email or not password or not full_name:
+        return jsonify({'error': 'Всі поля обов\'язкові'}), 400
+
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO users (email, password, full_name, role)
+            VALUES (?, ?, ?, ?)
+        ''', (email, hash_password(password), full_name, 'user'))
+        conn.commit()
+        return jsonify({'message': 'Реєстрація успішна'}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Email вже існує'}), 400
+    finally:
+        conn.close()
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, email, password, role FROM users WHERE email = ?', (email,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user and verify_password(password, user[2]):
+        token = generate_token(user[0], user[1], user[3])
+        return jsonify({'token': token, 'user': {'id': user[0], 'email': user[1], 'role': user[3]}})
+    else:
+        return jsonify({'error': 'Невірний email або пароль'}), 401
+
+# ========== МАРШРУТИ РОБОЧИХ МІСЦЬ ТА ПРИЛАДІВ ==========
+@app.route('/api/workplaces', methods=['GET', 'POST'])
+def workplaces():
+    user = get_user_from_token()
+    if not user:
+        return jsonify({'error': 'Неавторизований'}), 401
+
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    if request.method == 'GET':
+        cursor.execute('SELECT * FROM workplaces')
+        workplaces_list = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(workplaces_list)
+
+    if request.method == 'POST':
+        data = request.json
+        cursor.execute('''
+            INSERT INTO workplaces (name, location, description, created_by)
+            VALUES (?, ?, ?, ?)
+        ''', (data['name'], data['location'], data.get('description', ''), user['user_id']))
+        conn.commit()
+        new_id = cursor.lastrowid
+        conn.close()
+        return jsonify({'id': new_id, 'message': 'Робоче місце створено'}), 201
+
+@app.route('/api/devices', methods=['GET', 'POST'])
+def devices():
+    user = get_user_from_token()
+    if not user:
+        return jsonify({'error': 'Неавторизований'}), 401
+
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    if request.method == 'GET':
+        cursor.execute('SELECT * FROM devices')
+        devices_list = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(devices_list)
+
+    if request.method == 'POST':
+        data = request.json
+        cursor.execute('''
+            INSERT INTO devices (name, type, ip, port, channel, unit, workplace_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (data['name'], data['type'], data['ip'], data['port'], data.get('channel'), data.get('unit'), data.get('workplace_id')))
+        conn.commit()
+        device_id = cursor.lastrowid
+        cursor.execute('''
+            INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
+            VALUES (?, ?, ?, ?)
+        ''', (device_id, 100.0, 'value', 'green'))
+        conn.commit()
+        conn.close()
+        return jsonify({'id': device_id, 'message': 'Прилад додано'}), 201
+
+# ========== МАРШРУТИ ДЛЯ ТРИВОГ ==========
+@app.route('/api/devices_with_alarms')
+def devices_with_alarms():
+    # Для тестування перевірку токена тимчасово вимкнено
+    # user = get_user_from_token()
+    # if not user:
+    #     return jsonify({'error': 'Неавторизований'}), 401
+
+    conn = sqlite3.connect('database.db')
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT d.id, d.name, d.type, d.unit,
+               COALESCE(a.threshold, 100.0) as threshold,
+               COALESCE(a.alarm_type, 'value') as alarm_type,
+               COALESCE(a.color_status, 'green') as color_setting
+        FROM devices d
+        LEFT JOIN alarm_settings a ON d.id = a.device_id
+    ''')
+    devices = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for dev in devices:
+        current_value = round(random.uniform(0, dev['threshold'] * 1.5), 2)
+        if current_value > dev['threshold']:
             color = 'red'
-        elif device.value > threshold * 0.7:
+        elif current_value > dev['threshold'] * 0.7:
             color = 'orange'
         else:
             color = 'green'
-        
-        devices_data.append({
-            'id': device.id,
-            'name': device.name,
-            'type': device.type,
-            'current_value': device.value,
-            'threshold': threshold,
-            'alarm_type': alarm_type,
+
+        result.append({
+            'id': dev['id'],
+            'name': dev['name'],
+            'type': dev['type'],
+            'unit': dev['unit'] or '',
+            'current_value': current_value,
+            'threshold': dev['threshold'],
+            'alarm_type': dev['alarm_type'],
             'color': color,
-            'color_setting': color_setting,
-            'status': device.status
+            'color_setting': dev['color_setting']
         })
-    return jsonify(devices_data)
+    return jsonify(result)
 
-# API: отримати всі налаштування тривог
-@app.route('/api/alarms')
-def api_get_alarms():
-    alarms = AlarmSetting.query.all()
-    return jsonify([{
-        'id': alarm.id,
-        'device_id': alarm.device_id,
-        'threshold': alarm.threshold,
-        'alarm_type': alarm.alarm_type,
-        'color_status': alarm.color_status
-    } for alarm in alarms])
+@app.route('/api/alarm_settings/<int:device_id>', methods=['PUT'])
+def update_alarm_settings(device_id):
+    # Для тестування перевірку токена тимчасово вимкнено
+    # user = get_user_from_token()
+    # if not user:
+    #     return jsonify({'error': 'Неавторизований'}), 401
 
-# API: оновити налаштування тривоги для конкретного приладу
-@app.route('/api/alarms/<int:device_id>', methods=['PUT'])
-def api_update_alarm(device_id):
     data = request.json
-    alarm = AlarmSetting.query.filter_by(device_id=device_id).first()
-    if alarm:
-        alarm.threshold = data.get('threshold', alarm.threshold)
-        alarm.alarm_type = data.get('alarm_type', alarm.alarm_type)
-        alarm.color_status = data.get('color_status', alarm.color_status)
-        db.session.commit()
-        return jsonify({'status': 'success', 'message': 'Налаштування оновлено'})
-    return jsonify({'status': 'error', 'message': 'Прилад не знайдено'}), 404
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE alarm_settings
+        SET threshold = ?, alarm_type = ?, color_status = ?
+        WHERE device_id = ?
+    ''', (data['threshold'], data['alarm_type'], data['color_status'], device_id))
+    if cursor.rowcount == 0:
+        cursor.execute('''
+            INSERT INTO alarm_settings (device_id, threshold, alarm_type, color_status)
+            VALUES (?, ?, ?, ?)
+        ''', (device_id, data['threshold'], data['alarm_type'], data['color_status']))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'success'})
 
-# API: оновити поточне значення приладу (для симуляції)
-@app.route('/api/devices/<int:device_id>/value', methods=['POST'])
-def update_device_value(device_id):
-    data = request.json
-    device = Device.query.get(device_id)
-    if device:
-        device.value = data.get('value', device.value)
-        device.updated_at = datetime.utcnow()
-        
-        # Оновлюємо статус на основі тривоги
-        alarm = AlarmSetting.query.filter_by(device_id=device_id).first()
-        if alarm and device.value > alarm.threshold:
-            device.status = 'alarm'
-        elif alarm and device.value > alarm.threshold * 0.7:
-            device.status = 'warning'
-        else:
-            device.status = 'normal'
-            
-        db.session.commit()
-        return jsonify({'status': 'success'})
-    return jsonify({'status': 'error'}), 404
-
-# Сторінка керування тривогами
 @app.route('/alarms')
 def alarms_page():
     return render_template('alarms.html')
 
-# Головна сторінка
+# ========== СТАТИЧНІ ФАЙЛИ ==========
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return send_from_directory('static', 'index.html')
 
-# Сторінка дашборду
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
+@app.route('/<path:path>')
+def static_files(path):
+    return send_from_directory('static', path)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
-
+    app.run(debug=True, host='0.0.0.0', port=5002)
