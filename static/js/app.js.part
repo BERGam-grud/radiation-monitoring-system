@@ -1,0 +1,24 @@
+                    <div id="window-alarms" class="window">
+                        <div class="window-header">
+                            <div class="window-title">⚠️ НАЛАШТУВАННЯ ТРИВОГ</div>
+                            <button class="close-btn" onclick="closeWindow('alarms')">✕</button>
+                        </div>
+                        <div class="window-content">
+                            <div class="filter-bar">
+                                <select id="alarmFilterType" class="filter-select" onchange="filterAlarmConfigs()">
+                                    <option value="all">Всі типи</option>
+                                    <option value="gamma">Гама-детектори</option>
+                                    <option value="spectro">Спектрометри</option>
+                                    <option value="vfu">ВФУ</option>
+                                    <option value="weather">Метеостанції</option>
+                                </select>
+                                <select id="alarmFilterStatus" class="filter-select" onchange="filterAlarmConfigs()">
+                                    <option value="all">Всі стани</option>
+                                    <option value="enabled">Активні</option>
+                                    <option value="disabled">Вимкнені</option>
+                                </select>
+                                <button class="btn-primary" onclick="saveAllAlarmConfigs()">💾 ЗБЕРЕГТИ ВСІ</button>
+                            </div>
+                            <div id="alarmConfigsList"></div>
+                        </div>
+                    </div>

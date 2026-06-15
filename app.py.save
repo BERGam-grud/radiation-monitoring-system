@@ -1,0 +1,519 @@
+import os
+import jwt
+import datetime
+import secrets
+import threading
+import socket
+import time
+import re
+from functools import wraps
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+from flask_socketio import SocketIO, emit
+from email_validator import validate_email, EmailNotValidError
+
+# ========== КОНФІГУРАЦІЯ ==========
+app = Flask(__name__, static_folder='static', static_url_path='')
+CORS(app, supports_credentials=True, origins=[
+    "http://localhost:5001", 
+    "http://127.0.0.1:5001", 
+    "http://192.168.4.199:5001"
+])
+
+app.config['SECRET_KEY'] = 'your-secret-key-change-this-2024'
+app.config['JWT_SECRET'] = 'jwt-secret-key-2024'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Ініціалізація WebSocket з оптимізаціями
+socketio = SocketIO(app, 
+                    cors_allowed_origins="*",
+                    ping_timeout=60,
+                    ping_interval=25,
+                    max_http_buffer_size=1e6,
+                    async_mode='threading')
+
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+
+# ========== НАЛАШТУВАННЯ ДАТЧИКА ==========
+SENSORIP = "192.168.4.158"
+SENSOR_PORT = 5000  # Це порт ДАТЧИКА (не змінювати!)
+BUFFER_SIZE = 1024
+
+# Глобальні змінні
+current_dose = 0.0
+current_dose_raw = "0.00"
+sensor_connected = False
+sensor_error = None
+last_update_time = 0
+client_socket_global = None
+socketio_emit_lock = threading.Lock()
+
+# ========== ФУНКЦІЇ ДЛЯ РОБОТИ З ДАТЧИКОМ ==========
+def parse_sensor_data(data):
+    """Швидкий парсинг даних від датчика"""
+    try:
+        if isinstance(data, bytes):
+            data = data.decode('utf-8', errors='ignore').strip()
+        
+        # Шукаємо число (ціле або десяткове)
+        match = re.search(r"[-+]?\d*\.?\d+", data)
+        if match:
+            return float(match.group())
+        return None
+    except:
+        return None
+
+def handle_client_data(client_socket, client_address):
+    """Швидка обробка даних від датчика"""
+    global current_dose, current_dose_raw, sensor_connected, sensor_error, last_update_time
+    
+    client_ip = client_address[0]
+    client_port = client_address[1]
+    
+    # Встановлюємо неблокуючий режим для швидкого читання
+    client_socket.setblocking(False)
+    client_socket.settimeout(0.01)
+    
+    print(f"[INFO] Початок обробки даних від {client_ip}:{client_port}")
+    
+    data_buffer = bytearray()
+    last_data_time = time.time()
+    
+    while True:
+        try:
+            # Швидке читання даних
+            try:
+                data = client_socket.recv(BUFFER_SIZE)
+                if data:
+                    data_buffer.extend(data)
+                    last_data_time = time.time()
+                    
+                    # Обробляємо всі доступні дані
+                    while data_buffer:
+                        try:
+                            # Спробуємо декодувати як текст
+                            raw_str = data_buffer.decode('utf-8', errors='ignore').strip()
+                            
+                            # Якщо є символ нового рядка, обробляємо
+                            if '\n' in raw_str:
+                                lines = raw_str.split('\n')
+                                for line in lines:
+                                    line = line.strip()
+                                    if line:
+                                        process_data_line(line, client_ip)
+                                data_buffer.clear()
+                            elif '\r' in raw_str:
+                                parts = raw_str.split('\r')
+                                for part in parts:
+                                    part = part.strip()
+                                    if part:
+                                        process_data_line(part, client_ip)
+                                data_buffer.clear()
+                            elif len(raw_str) > 0:
+                                # Обробляємо як є
+                                process_data_line(raw_str, client_ip)
+                                data_buffer.clear()
+                            else:
+                                data_buffer.clear()
+                        except:
+                            # Якщо помилка, очищаємо буфер
+                            data_buffer.clear()
+                            
+            except socket.error as e:
+                # Немає даних, перевіряємо чи не застаріло з'єднання
+                if time.time() - last_data_time > 30:
+                    print(f"[WARN] Немає даних від {client_ip}:{client_port} протягом 30 секунд")
+                    break
+                time.sleep(0.001)  # Мікро-пауза
+                continue
+                
+        except Exception as e:
+            print(f"[ERROR] Помилка обробки даних: {e}")
+            break
+    
+    client_socket.close()
+    sensor_connected = False
+    print(f"[INFO] З'єднання з {client_ip}:{client_port} закрито")
+
+def process_data_line(line, client_ip):
+    """Швидка обробка одного рядка даних"""
+    global current_dose, current_dose_raw, sensor_connected, sensor_error, last_update_time
+    
+    line = line.strip()
+    if not line:
+        return
+    
+    # Парсимо значення
+    value = parse_sensor_data(line)
+    
+    if value is not None:
+        current_dose = value
+        current_dose_raw = line
+        sensor_connected = True
+        sensor_error = None
+        last_update_time = time.time()
+        
+        # Відправляємо через WebSocket
+        try:
+            with socketio_emit_lock:
+                socketio.emit('sensor_data', {
+                    'value': current_dose,
+                    'raw': current_dose_raw,
+                    'timestamp': time.time(),
+                    'status': 'ok'
+                })
+        except Exception as e:
+            print(f"[ERROR] Помилка WebSocket: {e}")
+        
+        # Кольоровий вивід в консоль
+        if current_dose < 0.3:
+            color = '\033[92m'  # Зелений
+        elif current_dose < 0.5:
+            color = '\033[93m'  # Жовтий
+        else:
+            color = '\033[91m'  # Червоний
+        
+        print(f"{color}[DATA] Доза: {current_dose:.3f} мкЗв/год | Raw: {current_dose_raw}\033[0m")
+    else:
+        print(f"[WARN] Не розпарсено: {line}")
+
+def start_tcp_server():
+    """TCP сервер з оптимізацією"""
+    global sensor_connected, sensor_error
+    
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)  # Вимкнути Nagle
+    
+    try:
+        server_socket.bind(('0.0.0.0', SENSOR_PORT))
+        server_socket.listen(5)
+        
+        print(f"\n{'='*60}")
+        print(f"[SERVER] TCP сервер запущено на порту {SENSOR_PORT}")
+        print(f"[SERVER] Очікуємо підключення від датчика {SENSOR_IP}")
+        print(f"[SERVER] Порт веб-сервера: 5001")
+        print(f"{'='*60}\n")
+        
+        while True:
+            try:
+                client_socket, client_address = server_socket.accept()
+                client_ip = client_address[0]
+                
+                print(f"\n[CONNECT] Нове підключення від {client_ip}")
+                
+                if client_ip == SENSOR_IP:
+                    print(f"[CONNECT] Основний датчик підключено!")
+                    sensor_connected = True
+                    sensor_error = None
+                    
+                    # Сповіщаємо всіх клієнтів
+                    socketio.emit('sensor_data', {
+                        'value': current_dose if current_dose > 0 else None,
+                        'status': 'connected',
+                        'message': f'Датчик {SENSOR_IP} підключено'
+                    })
+                    
+                    # Запускаємо обробку в окремому потоці
+                    client_thread = threading.Thread(
+                        target=handle_client_data,
+                        args=(client_socket, client_address),
+                        daemon=True
+                    )
+                    client_thread.start()
+                else:
+                    print(f"[CONNECT] Ігноруємо підключення від {client_ip}")
+                    client_socket.close()
+                    
+            except Exception as e:
+                print(f"[ERROR] Помилка прийому підключення: {e}")
+                time.sleep(0.1)
+                
+    except Exception as e:
+        print(f"[ERROR] Помилка запуску сервера: {e}")
+        sensor_error = f"Помилка: {e}"
+    finally:
+        server_socket.close()
+
+def start_sensor_reader():
+    """Запуск TCP сервера"""
+    thread = threading.Thread(target=start_tcp_server, daemon=True)
+    thread.start()
+    print(f"[SERVER] Потік TCP сервера запущено")
+
+# ========== МОДЕЛІ БАЗИ ДАНИХ ==========
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    full_name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    failed_attempts = db.Column(db.Integer, default=0)
+    locked_until = db.Column(db.DateTime, nullable=True)
+    
+    def set_password(self, password):
+        self.password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+    
+    def check_password(self, password):
+        return bcrypt.check_password_hash(self.password_hash, password)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'full_name': self.full_name,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+class PasswordResetToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    token = db.Column(db.String(100), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    is_used = db.Column(db.Boolean, default=False)
+    
+    user = db.relationship('User', backref=db.backref('reset_tokens', lazy=True))
+
+# ========== WebSocket ПОДІЇ ==========
+@socketio.on('connect')
+def handle_connect():
+    """Клієнт підключився"""
+    print(f"[WS] Клієнт підключився")
+    emit('connected', {'message': 'Підключено до сервера', 'timestamp': time.time()})
+    
+    # Відправляємо поточне значення
+    if current_dose > 0 and sensor_connected:
+        emit('sensor_data', {
+            'value': current_dose,
+            'raw': current_dose_raw,
+            'timestamp': time.time(),
+            'status': 'ok'
+        })
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Клієнт відключився"""
+    print(f"[WS] Клієнт відключився")
+
+@socketio.on('request_current')
+def handle_request_current():
+    """Швидкий запит поточного значення"""
+    if current_dose > 0 and sensor_connected:
+        emit('sensor_data', {
+            'value': current_dose,
+            'raw': current_dose_raw,
+            'timestamp': time.time(),
+            'status': 'ok'
+        })
+    else:
+        emit('sensor_data', {
+            'value': None,
+            'status': 'disconnected',
+            'error': sensor_error or 'Немає підключення до датчика'
+        })
+
+# ========== API РОУТИ ==========
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        
+        if not token:
+            return jsonify({'error': 'Токен відсутній'}), 401
+        
+        if token.startswith('Bearer '):
+            token = token[7:]
+        
+        try:
+            data = jwt.decode(token, app.config['JWT_SECRET'], algorithms=['HS256'])
+            current_user = User.query.get(data['user_id'])
+            if not current_user or not current_user.is_active:
+                return jsonify({'error': 'Користувача не знайдено'}), 401
+        except:
+            return jsonify({'error': 'Невірний токен'}), 401
+        
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    full_name = data.get('full_name', '').strip()
+    
+    try:
+        valid = validate_email(email)
+        email = valid.email
+    except EmailNotValidError:
+        return jsonify({'success': False, 'error_ua': 'Невірний email'}), 400
+    
+    if len(password) < 6:
+        return jsonify({'success': False, 'error_ua': 'Пароль мінімум 6 символів'}), 400
+    
+    if User.query.filter_by(email=email).first():
+        return jsonify({'success': False, 'error_ua': 'Email вже використовується'}), 400
+    
+    user = User(email=email, full_name=full_name or email.split('@')[0])
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message_ua': 'Реєстрація успішна!'}), 201
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    
+    user = User.query.filter_by(email=email).first()
+    
+    if user and user.locked_until and user.locked_until > datetime.datetime.utcnow():
+        remaining = (user.locked_until - datetime.datetime.utcnow()).seconds // 60
+        return jsonify({'success': False, 'error_ua': f'Заблоковано на {remaining} хв'}), 401
+    
+    if not user or not user.check_password(password):
+        if user:
+            user.failed_attempts += 1
+            remaining = 3 - user.failed_attempts
+            
+            if user.failed_attempts >= 3:
+                user.locked_until = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
+                db.session.commit()
+                return jsonify({'success': False, 'error_ua': 'Перевищено спроби. Блокування 15 хв'}), 401
+            
+            db.session.commit()
+        else:
+            remaining = 3
+        
+        return jsonify({'success': False, 'error_ua': f'Невірний пароль. Залишилось спроб: {remaining}'}), 401
+    
+    user.failed_attempts = 0
+    user.locked_until = None
+    db.session.commit()
+    
+    token = jwt.encode({
+        'user_id': user.id,
+        'email': user.email,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
+    }, app.config['JWT_SECRET'], algorithm='HS256')
+    
+    return jsonify({'success': True, 'token': token, 'user': user.to_dict()}), 200
+
+@app.route('/api/request-reset', methods=['POST'])
+def request_password_reset():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({'success': True, 'message_ua': 'Якщо email існує, інструкції надіслано'}), 200
+    
+    PasswordResetToken.query.filter_by(user_id=user.id, is_used=False).delete()
+    
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+    
+    reset_token = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)
+    db.session.add(reset_token)
+    db.session.commit()
+    
+    print(f"\n{'='*50}")
+    print(f"[RESET] Токен для {email}: {token}")
+    print(f"{'='*50}\n")
+    
+    return jsonify({'success': True, 'demo_token': token, 'message_ua': f'Інструкції надіслано'}), 200
+
+@app.route('/api/reset-password', methods=['POST'])
+def reset_password():
+    data = request.json
+    token = data.get('token', '')
+    new_password = data.get('new_password', '')
+    
+    if len(new_password) < 6:
+        return jsonify({'success': False, 'error_ua': 'Пароль мінімум 6 символів'}), 400
+    
+    reset_token = PasswordResetToken.query.filter_by(token=token, is_used=False).first()
+    
+    if not reset_token or reset_token.expires_at < datetime.datetime.utcnow():
+        return jsonify({'success': False, 'error_ua': 'Невірний або прострочений токен'}), 400
+    
+    user = reset_token.user
+    user.set_password(new_password)
+    user.failed_attempts = 0
+    user.locked_until = None
+    reset_token.is_used = True
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message_ua': 'Пароль змінено!'}), 200
+
+@app.route('/api/me', methods=['GET'])
+@token_required
+def get_current_user(current_user):
+    return jsonify({'success': True, 'user': current_user.to_dict()}), 200
+
+@app.route('/api/sensor/status', methods=['GET'])
+def sensor_status():
+    return jsonify({
+        'connected': sensor_connected,
+        'current_value': current_dose,
+        'raw_data': current_dose_raw,
+        'error': sensor_error,
+        'sensor_ip': SENSOR_IP,
+        'sensor_port': SENSOR_PORT,
+        'last_update': last_update_time
+    })
+
+@app.route('/api/logout', methods=['POST'])
+@token_required
+def logout(current_user):
+    return jsonify({'success': True, 'message_ua': 'Вихід виконано'}), 200
+
+# ========== СТАТИЧНІ ФАЙЛИ ==========
+@app.route('/')
+def serve_index():
+    return send_from_directory('static', 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory('static', path)
+
+# ========== ЗАПУСК СЕРВЕРА ==========
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+        print("[DB] База даних створена")
+        
+        if not User.query.filter_by(email='test@example.com').first():
+            test_user = User(email='test@example.com', full_name='Тестовий Користувач')
+            test_user.set_password('test123')
+            db.session.add(test_user)
+            db.session.commit()
+            print("[DB] Тестовий користувач: test@example.com / test123")
+    
+    # Запускаємо датчик
+    start_sensor_reader()
+    
+    print("\n" + "="*60)
+    print("[START] СЕРВЕР ЗАПУЩЕНО")
+    print("="*60)
+    print(f"[WEB] http://localhost:5001")
+    print(f"[WEB] http://{SENSOR_IP}:5001 (з інших пристроїв)")
+    print(f"[SENSOR] Датчик: {SENSOR_IP}:{SENSOR_PORT}")
+    print(f"[MODE] TCP сервер (очікує підключення датчика)")
+    print("="*60 + "\n")
+    
+    # Запускаємо Flask з SocketIO на порту 5001
+    socketio.run(app, 
+                 debug=False, 
+                 host='0.0.0.0', 
+                 port=5002, 
+                 allow_unsafe_werkzeug=True,
+                 use_reloader=False)
