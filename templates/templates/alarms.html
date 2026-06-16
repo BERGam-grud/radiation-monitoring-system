@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Налаштування тривог - Radiation Monitoring</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .device-table th { cursor: pointer; }
+        .green-row { background-color: #d4edda; }
+        .orange-row { background-color: #fff3cd; }
+        .red-row { background-color: #f8d7da; }
+        .modal-content { border-radius: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">📡 Керування тривогами приладів</h1>
+        
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <label>Фільтр за типом приладу:</label>
+                <select id="typeFilter" class="form-select">
+                    <option value="all">Всі типи</option>
+                    <option value="gamma_detector">Гамма-детектор</option>
+                    <option value="spectrometric">Спектрометричний</option>
+                    <option value="vfu">ВФУ</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Фільтр за кольором:</label>
+                <select id="colorFilter" class="form-select">
+                    <option value="all">Всі кольори</option>
+                    <option value="green">🟢 Зелений</option>
+                    <option value="orange">🟠 Оранжевий</option>
+                    <option value="red">🔴 Червоний</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>Сортувати за:</label>
+                <select id="sortBy" class="form-select">
+                    <option value="type">Типом приладу</option>
+                    <option value="current_value">Поточним значенням</option>
+                    <option value="threshold">Порогом тривоги</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-bordered device-table" id="deviceTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID приладу</th>
+                        <th>Тип приладу</th>
+                        <th>Поточне значення</th>
+                        <th>Поріг тривоги</th>
+                        <th>Статус</th>
+                        <th>Дія</th>
+                    </tr>
+                </thead>
+                <tbody id="deviceTableBody">
+                    <tr><td colspan="6" class="text-center">Завантаження...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="modal fade" id="alarmModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">⚙️ Налаштування тривоги</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="modalDeviceId">
+                    <div class="mb-3"><label>Прилад: <span id="modalDeviceType"></span></label></div>
+                    <div class="mb-3">
+                        <label for="threshold" class="form-label">Поріг тривоги:</label>
+                        <input type="number" step="any" id="threshold" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="alarmType" class="form-label">Тип вимірювання:</label>
+                        <select id="alarmType" class="form-select">
+                            <option value="value">За значенням (пряме перевищення)</option>
+                            <option value="rate">За швидкістю (зміна за одиницю часу)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="colorStatus" class="form-label">Колір сповіщення:</label>
+                        <select id="colorStatus" class="form-select">
+                            <option value="green">🟢 Зелений (норма)</option>
+                            <option value="orange">🟠 Оранжевий (увага)</option>
+                            <option value="red">🔴 Червоний (небезпека)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="button" class="btn btn-primary" id="saveAlarmBtn">Зберегти</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let devicesData = [];
+        async function loadDevices() {
+            try {
+                const response = await fetch('/api/devices');
+                devicesData = await response.json();
+                applyFiltersAndSort();
+            } catch (error) {
+                console.error('Помилка завантаження:', error);
+                document.getElementById('deviceTableBody').innerHTML = '<tr><td colspan="6" class="text-center">Помилка завантаження даних</td></tr>';
+            }
+        }
+        function renderTable(data) {
+            const tbody = document.getElementById('deviceTableBody');
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">Немає приладів</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.map(device => `
+                <tr class="${device.color === 'red' ? 'red-row' : (device.color === 'orange' ? 'orange-row' : 'green-row')}">
+                    <td>${device.id}</td>
+                    <td>${device.type}</td>
+                    <td><strong>${device.current_value}</strong></td>
+                    <td>${device.threshold}</td>
+                    <td><span class="badge bg-${device.color === 'red' ? 'danger' : (device.color === 'orange' ? 'warning' : 'success')}">${device.color === 'red' ? 'ТРИВОГА' : (device.color === 'orange' ? 'Увага' : 'Норма')}</span></td>
+                    <td><button class="btn btn-sm btn-outline-primary" onclick="openModal('${device.id}', '${device.type}', ${device.threshold}, '${device.alarm_type}', '${device.color}')">⚙️ Налаштувати</button></td>
+                </tr>
+            `).join('');
+        }
+        function applyFiltersAndSort() {
+            let filtered = [...devicesData];
+            const typeFilter = document.getElementById('typeFilter').value;
+            const colorFilter = document.getElementById('colorFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            if (typeFilter !== 'all') filtered = filtered.filter(d => d.type === typeFilter);
+            if (colorFilter !== 'all') filtered = filtered.filter(d => d.color === colorFilter);
+            if (sortBy === 'type') filtered.sort((a,b) => a.type.localeCompare(b.type));
+            if (sortBy === 'current_value') filtered.sort((a,b) => b.current_value - a.current_value);
+            if (sortBy === 'threshold') filtered.sort((a,b) => b.threshold - a.threshold);
+            renderTable(filtered);
+        }
+        window.openModal = function(id, type, threshold, alarmType, color) {
+            document.getElementById('modalDeviceId').value = id;
+            document.getElementById('modalDeviceType').innerText = type;
+            document.getElementById('threshold').value = threshold;
+            document.getElementById('alarmType').value = alarmType;
+            document.getElementById('colorStatus').value = color;
+            new bootstrap.Modal(document.getElementById('alarmModal')).show();
+        }
+        document.getElementById('saveAlarmBtn').addEventListener('click', async () => {
+            const deviceId = document.getElementById('modalDeviceId').value;
+            const payload = {
+                threshold: parseFloat(document.getElementById('threshold').value),
+                alarm_type: document.getElementById('alarmType').value,
+                color_status: document.getElementById('colorStatus').value
+            };
+            try {
+                const response = await fetch(`/api/alarms/${deviceId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (response.ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('alarmModal')).hide();
+                    loadDevices();
+                } else alert('Помилка збереження');
+            } catch (error) { alert('Помилка з'єднання'); }
+        });
+        document.getElementById('typeFilter').addEventListener('change', applyFiltersAndSort);
+        document.getElementById('colorFilter').addEventListener('change', applyFiltersAndSort);
+        document.getElementById('sortBy').addEventListener('change', applyFiltersAndSort);
+        loadDevices();
+        setInterval(loadDevices, 5000);
+    </script>
+</body>
+</html>

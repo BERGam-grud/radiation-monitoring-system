@@ -3,11 +3,19 @@ const API_URL = 'http://192.168.4.223:5002';
 let authToken = localStorage.getItem('authToken');
 let currentUser = null;
 let currentLang = 'uk';
+
 let selectedDevice = null;
 let deviceChart = null;
 let hourChart = null;
 let map = null;
 let markers = [];
+
+// ========== ЗМІННІ ДЛЯ ГРАФІКІВ ==========
+
+let monitoringChart = null;
+let monitoringImpulseChart = null;
+let monitoringDoseChart = null;
+let currentMonitoringDevice = null;
 
 // Координати для різних областей (приблизні)
 const areaCoordinates = {
@@ -22,13 +30,36 @@ const areaCoordinates = {
     'Полтавська': { lat: 49.59, lng: 34.55 },
     'Вінницька': { lat: 49.23, lng: 28.48 }
 };
-
 // ========== ТИПИ ПРИЛАДІВ ==========
 const deviceTypes = {
-    gamma: { name: 'Гама-детектор', icon: '📡', unit: 'мкЗв/год', color: '#4ade80' },
-    spectro: { name: 'Спектрометричний детектор', icon: '🔬', unit: 'кБк/м³', color: '#fbbf24' },
-    vfu: { name: 'ВФУ', icon: '💨', unit: 'м/с', color: '#60a5fa' },
-    weather: { name: 'Метеостанція Gill MAXIMET 500', icon: '🌡️', unit: '°C', color: '#f97316' }
+    gamma: {
+        name: 'Гама-детектор',
+        icon: '📡',
+        unit: 'uSv/год',
+        color: '#4ade80',
+        params: ['Доза', 'Імпульси CPS']
+    },
+    spectro: {
+        name: 'Спектрометричний детектор',
+        icon: '🔬',
+        unit: 'uSv/год',
+        color: '#fbbf24',
+        params: ['Активність', 'Енергетичний спектр']
+    },
+    vfu: {
+        name: 'ВФУ',
+        icon: '💨',
+        unit: 'м/с',
+        color: '#60a5fa',
+        params: ['Температура', 'Швидкість потоку', 'Тиск', 'Прогаз повітря']
+    },
+    weather: {
+        name: 'Метеостанція',
+        icon: '🌡️',
+        unit: '°C',
+        color: '#f97316',
+        params: ['Температура', 'Вологість', 'Швидкість вітру', 'Напрямок вітру', 'Тиск']
+    }
 };
 
 const locations = ['Київська', 'Житомирська', 'Чернігівська', 'Харківська', 'Львівська', 'Одеська', 'Дніпропетровська', 'Запорізька', 'Полтавська', 'Вінницька'];
@@ -36,6 +67,124 @@ const locations = ['Київська', 'Житомирська', 'Чернігі
 // Отримання унікальних областей та РМ для фільтрів
 let uniqueAreas = [];
 let uniqueWorkplaces = [];
+
+// ========== ГЕНЕРАЦІЯ ДАНИХ ДЛЯ РІЗНИХ ТИПІВ ПРИЛАДІВ ==========
+function generateDeviceData(type, count = 100) {
+    let data = [];
+    let baseValue = 0;
+    let params = {};
+
+    switch(type) {
+        case 'gamma':
+            baseValue = 0.15 + Math.random() * 0.3;
+            for (let i = 0; i < count; i++) {
+                let dose = baseValue + (Math.random() - 0.5) * 0.1;
+                let cps = dose * 100 + Math.random() * 20;
+                data.push({
+                    timestamp: Date.now() - (count - i) * 60000,
+                    dose: Math.max(0, dose),
+                    cps: Math.max(0, cps)
+                });
+            }
+            params = {
+                dose: data[data.length-1].dose,
+                cps: data[data.length-1].cps,
+                unit: 'uSv/год',
+                status: 'normal'
+            };
+            break;
+
+        case 'spectro':
+            baseValue = 0.5 + Math.random() * 0.5;
+            for (let i = 0; i < count; i++) {
+                let activity = baseValue + (Math.random() - 0.5) * 0.2;
+                data.push({
+                    timestamp: Date.now() - (count - i) * 60000,
+                    activity: Math.max(0, activity),
+                    spectrum: generateSpectrumData()
+                });
+            }
+            params = {
+                activity: data[data.length-1].activity,
+                unit: 'uSv/год',
+                status: 'normal'
+            };
+            break;
+
+        case 'vfu':
+            baseValue = 3 + Math.random() * 4;
+            for (let i = 0; i < count; i++) {
+                let speed = baseValue + (Math.random() - 0.5) * 1;
+                let temp = 20 + (Math.random() - 0.5) * 5;
+                let pressure = 1013 + (Math.random() - 0.5) * 20;
+                data.push({
+                    timestamp: Date.now() - (count - i) * 60000,
+                    speed: Math.max(0, speed),
+                    temperature: temp,
+                    pressure: pressure
+                });
+            }
+            params = {
+                speed: data[data.length-1].speed,
+                temperature: data[data.length-1].temperature,
+                pressure: data[data.length-1].pressure,
+                unit: 'м/с',
+                status: 'normal'
+            };
+            break;
+
+        case 'weather':
+            baseValue = 15 + Math.random() * 10;
+            for (let i = 0; i < count; i++) {
+                let temp = baseValue + (Math.random() - 0.5) * 3;
+                let humidity = 60 + (Math.random() - 0.5) * 20;
+                let windSpeed = 3 + (Math.random() - 0.5) * 4;
+                let pressure = 1013 + (Math.random() - 0.5) * 15;
+                data.push({
+                    timestamp: Date.now() - (count - i) * 60000,
+                    temperature: temp,
+                    humidity: Math.min(100, Math.max(0, humidity)),
+                    windSpeed: Math.max(0, windSpeed),
+                    pressure: pressure
+                });
+            }
+            params = {
+                temperature: data[data.length-1].temperature,
+                humidity: data[data.length-1].humidity,
+                windSpeed: data[data.length-1].windSpeed,
+                pressure: data[data.length-1].pressure,
+                unit: '°C',
+                status: 'normal'
+            };
+            break;
+    }
+
+    return { data, params };
+}
+
+function generateSpectrumData() {
+    let spectrum = [];
+    for (let i = 0; i < 2048; i++) {
+        let energy = i * 1.5;
+        let counts = 50 + Math.random() * 30;
+        
+        if (energy > 640 && energy < 690) {
+            counts += 500 * Math.exp(-Math.pow((energy - 662) / 15, 2));
+        }
+        if (energy > 1150 && energy < 1200) {
+            counts += 300 * Math.exp(-Math.pow((energy - 1173) / 20, 2));
+        }
+        if (energy > 1300 && energy < 1360) {
+            counts += 280 * Math.exp(-Math.pow((energy - 1332) / 20, 2));
+        }
+        if (energy > 200 && energy < 600) {
+            counts += 100 * Math.exp(-Math.pow((energy - 400) / 150, 2));
+        }
+        
+        spectrum.push({ energy: Math.round(energy), counts: Math.round(counts) });
+    }
+    return spectrum;
+}
 
 // ========== ДОПОМІЖНІ ФУНКЦІЇ ==========
 function generateRandomValue(type) {
@@ -52,7 +201,7 @@ function generateHistory(baseValue, count = 100) {
     const history = [];
     for (let i = 0; i < count; i++) {
         const variation = (Math.random() - 0.5) * 0.2 * parseFloat(baseValue);
-        history.push({ 
+        history.push({
             timestamp: Date.now() - (count - i) * 3600000,
             value: Math.max(0, parseFloat(baseValue) + variation)
         });
@@ -99,10 +248,14 @@ let workplaces = [];
 for (let i = 1; i <= 10; i++) {
     const location = locations[(i-1) % locations.length];
     const coords = areaCoordinates[location] || { lat: 49.0, lng: 32.0 };
-    // Додаємо невеликий зсув для кожного РМ в межах області
     const latOffset = (Math.random() - 0.5) * 0.5;
     const lngOffset = (Math.random() - 0.5) * 0.5;
-    
+
+    const gammaData = generateDeviceData('gamma', 100);
+    const spectroData = generateDeviceData('spectro', 100);
+    const vfuData = generateDeviceData('vfu', 100);
+    const weatherData = generateDeviceData('weather', 100);
+
     workplaces.push({
         id: i,
         name: `РМ-${i}`,
@@ -111,70 +264,94 @@ for (let i = 1; i <= 10; i++) {
         lat: coords.lat + latOffset,
         lng: coords.lng + lngOffset,
         equipment: [
-            { 
-                id: `wp${i}_gamma`, type: 'gamma', name: deviceTypes.gamma.name, 
-                model: `AT-${1000 + i}`, serial: `GAM-${2024000 + i}`,
-                value: parseFloat(generateRandomValue('gamma')), status: 'normal',
-                channel: 'Гамма-випромінювання', unit: deviceTypes.gamma.unit,
-                ip: `192.168.4.${180 + i}`, port: 5000 + i,
+            {
+                id: `wp${i}_gamma`,
+                type: 'gamma',
+                name: deviceTypes.gamma.name,
+                model: `AT-${1000 + i}`,
+                serial: `GAM-${2024000 + i}`,
+                value: gammaData.params.dose,
+                status: 'normal',
+                channel: 'Гамма-випромінювання',
+                unit: deviceTypes.gamma.unit,
+                ip: `192.168.4.${180 + i}`,
+                port: 5000 + i,
                 uptime: Math.floor(Math.random() * 30) + 1,
                 lastUpdate: new Date(),
-                history: [],
-                hourHistory: [],
-                logs: [],
+                history: gammaData.data,
+                data: gammaData.params,
+                logs: generateRandomLogs('Гама-детектор', 20),
                 errors: Math.floor(Math.random() * 10),
-                alarmLevels: { warning: 0.15, danger: 0.25, critical: 0.30 }
+                alarmLevels: { warning: 0.20, danger: 0.35, critical: 0.50 },
+                gps: { lat: coords.lat + latOffset + 0.01, lng: coords.lng + lngOffset + 0.01 }
             },
-            { 
-                id: `wp${i}_spectro`, type: 'spectro', name: deviceTypes.spectro.name,
-                model: `MKS-${100 + i}`, serial: `SPE-${2024000 + i}`,
-                value: parseFloat(generateRandomValue('spectro')), status: 'normal',
-                channel: 'Активність', unit: deviceTypes.spectro.unit,
-                ip: `192.168.4.${200 + i}`, port: 6000 + i,
+            {
+                id: `wp${i}_spectro`,
+                type: 'spectro',
+                name: deviceTypes.spectro.name,
+                model: `MKS-${100 + i}`,
+                serial: `SPE-${2024000 + i}`,
+                value: spectroData.params.activity,
+                status: 'normal',
+                channel: 'Активність',
+                unit: deviceTypes.spectro.unit,
+                ip: `192.168.4.${200 + i}`,
+                port: 6000 + i,
                 uptime: Math.floor(Math.random() * 30) + 1,
                 lastUpdate: new Date(),
-                history: [],
-                hourHistory: [],
-                logs: [],
+                history: spectroData.data,
+                data: spectroData.params,
+                logs: generateRandomLogs('Спектрометр', 20),
                 errors: Math.floor(Math.random() * 5),
-                alarmLevels: { warning: 0.20, danger: 0.35, critical: 0.50 }
+                alarmLevels: { warning: 0.30, danger: 0.50, critical: 0.70 },
+                gps: { lat: coords.lat + latOffset + 0.02, lng: coords.lng + lngOffset + 0.02 }
             },
-            { 
-                id: `wp${i}_vfu`, type: 'vfu', name: deviceTypes.vfu.name,
-                model: `VFU-${100 + i}`, serial: `VFU-${2024000 + i}`,
-                value: parseFloat(generateRandomValue('vfu')), status: 'normal',
-                channel: 'Швидкість вітру', unit: deviceTypes.vfu.unit,
-                ip: `192.168.4.${220 + i}`, port: 7000 + i,
+            {
+                id: `wp${i}_vfu`,
+                type: 'vfu',
+                name: deviceTypes.vfu.name,
+                model: `VFU-${100 + i}`,
+                serial: `VFU-${2024000 + i}`,
+                value: vfuData.params.speed,
+                status: 'normal',
+                channel: 'Швидкість потоку',
+                unit: deviceTypes.vfu.unit,
+                ip: `192.168.4.${220 + i}`,
+                port: 7000 + i,
                 uptime: Math.floor(Math.random() * 30) + 1,
                 lastUpdate: new Date(),
-                history: [],
-                hourHistory: [],
-                logs: [],
+                history: vfuData.data,
+                data: vfuData.params,
+                logs: generateRandomLogs('ВФУ', 20),
                 errors: Math.floor(Math.random() * 3),
-                alarmLevels: { warning: 5.0, danger: 8.0, critical: 10.0 }
+                alarmLevels: { warning: 5.0, danger: 8.0, critical: 10.0 },
+                gps: { lat: coords.lat + latOffset + 0.015, lng: coords.lng + lngOffset + 0.015 }
             },
-            { 
-                id: `wp${i}_weather`, type: 'weather', name: deviceTypes.weather.name,
-                model: `Gill-${500 + i}`, serial: `WEA-${2024000 + i}`,
-                value: parseFloat(generateRandomValue('weather')), status: 'normal',
-                channel: 'Температура', unit: deviceTypes.weather.unit,
-                ip: `192.168.4.${240 + i}`, port: 8000 + i,
+            {
+                id: `wp${i}_weather`,
+                type: 'weather',
+                name: deviceTypes.weather.name,
+                model: `Gill-${500 + i}`,
+                serial: `WEA-${2024000 + i}`,
+                value: weatherData.params.temperature,
+                status: 'normal',
+                channel: 'Температура',
+                unit: deviceTypes.weather.unit,
+                ip: `192.168.4.${240 + i}`,
+                port: 8000 + i,
                 uptime: Math.floor(Math.random() * 30) + 1,
                 lastUpdate: new Date(),
-                history: [],
-                hourHistory: [],
-                logs: [],
+                history: weatherData.data,
+                data: weatherData.params,
+                logs: generateRandomLogs('Метеостанція', 20),
                 errors: Math.floor(Math.random() * 2),
-                alarmLevels: { warning: 25, danger: 30, critical: 35 }
+                alarmLevels: { warning: 25, danger: 30, critical: 35 },
+                gps: { lat: coords.lat + latOffset + 0.01, lng: coords.lng + lngOffset + 0.01 }
             }
         ]
     });
-    
-    // Генерація історії та логів
+
     workplaces[i-1].equipment.forEach(dev => {
-        dev.history = generateHistory(dev.value, 100);
-        dev.hourHistory = generateHourHistory(dev.value);
-        dev.logs = generateRandomLogs(dev.name, 20);
         if (dev.value >= dev.alarmLevels.critical) dev.status = 'critical';
         else if (dev.value >= dev.alarmLevels.danger) dev.status = 'danger';
         else if (dev.value >= dev.alarmLevels.warning) dev.status = 'warning';
@@ -241,7 +418,7 @@ function hasPermission(permission) {
 function renderUsersListTable() {
     const tbody = document.getElementById('usersListTableBody');
     if (!tbody) return;
-    
+
     tbody.innerHTML = users.map(user => {
         return `
             <tr>
@@ -349,17 +526,17 @@ function addUser() {
     const password = document.getElementById('newUserPassword').value;
     const full_name = document.getElementById('newUserName').value;
     const role = document.getElementById('newUserRole').value;
-    
+
     if (!email || !password || !full_name) {
         alert('Будь ласка, заповніть всі поля');
         return;
     }
-    
+
     if (users.find(u => u.email === email)) {
         alert('Користувач з таким email вже існує');
         return;
     }
-    
+
     const newId = Math.max(...users.map(u => u.id), 0) + 1;
     users.push({
         id: newId,
@@ -379,7 +556,7 @@ function addUser() {
 function renderPermissionsTable() {
     const container = document.getElementById('permissionsContainer');
     if (!container) return;
-    
+
     const resources = [
         { id: 'monitoring', name: '📊 Моніторинг', description: 'Перегляд даних моніторингу' },
         { id: 'devices', name: '📡 Прилади', description: 'Перегляд та управління приладами' },
@@ -388,11 +565,11 @@ function renderPermissionsTable() {
         { id: 'permissions', name: '🔐 Права доступу', description: 'Налаштування прав доступу' },
         { id: 'export', name: '📄 Експорт', description: 'Експорт даних та звітів' }
     ];
-    
+
     container.innerHTML = `
         <div style="margin-bottom:20px;">
             <h3 style="margin-bottom:15px;">🔐 Налаштування прав доступу за ролями</h3>
-            <p style="color:#8a8a9a; margin-bottom:20px;">Тут ви можете налаштувати, які дії дозволені для кожної ролі користувачів.</p>
+            <p style="color:#f0f0f5; margin-bottom:20px;">Тут ви можете налаштувати, які дії дозволені для кожної ролі користувачів.</p>
         </div>
         <div style="overflow-x:auto;">
             <table class="permissions-table" style="width:100%; border-collapse:collapse;">
@@ -412,8 +589,8 @@ function renderPermissionsTable() {
                             ${roles.map(role => `
                                 <td style="padding:12px; text-align:center;">
                                     <label class="permission-switch" style="display:inline-block;">
-                                        <input type="checkbox" 
-                                               id="perm_${role.id}_${resource.id}" 
+                                        <input type="checkbox"
+                                               id="perm_${role.id}_${resource.id}"
                                                ${role.permissions[getPermissionKey(resource.id)] ? 'checked' : ''}
                                                onchange="updatePermission('${role.id}', '${resource.id}', this.checked)"
                                                ${!hasPermission('managePermissions') ? 'disabled' : ''}>
@@ -428,7 +605,7 @@ function renderPermissionsTable() {
         </div>
         <div style="margin-top:20px; padding:15px; background:#2a2a3a; border-radius:8px;">
             <h4 style="margin-bottom:10px;">📖 Легенда прав доступу:</h4>
-            <ul style="margin:0; padding-left:20px; color:#8a8a9a;">
+            <ul style="margin:0; padding-left:20px; color:#f0f0f5;">
                 <li><strong>read</strong> - перегляд даних та інформації</li>
                 <li><strong>edit</strong> - редагування та зміна даних</li>
                 <li><strong>admin</strong> - адміністративні функції</li>
@@ -458,7 +635,6 @@ function updatePermission(roleId, resourceId, isChecked) {
     if (role) {
         const permKey = getPermissionKey(resourceId);
         role.permissions[permKey] = isChecked;
-        
         localStorage.setItem('systemRoles', JSON.stringify(roles));
         renderPermissionsTable();
         updateCurrentUserPermissions();
@@ -631,13 +807,13 @@ function renderFilteredDevices() {
     const workplaceFilter = document.getElementById('devFilterWorkplace')?.value || 'all';
     const areaFilter = document.getElementById('devFilterArea')?.value || 'all';
     const statusFilter = document.getElementById('devFilterStatus')?.value || 'all';
-    
+
     let filtered = [...allDevices];
     if (typeFilter !== 'all') filtered = filtered.filter(d => d.type === typeFilter);
     if (workplaceFilter !== 'all') filtered = filtered.filter(d => d.workplace === workplaceFilter);
     if (areaFilter !== 'all') filtered = filtered.filter(d => d.area === areaFilter);
     if (statusFilter !== 'all') filtered = filtered.filter(d => d.status === statusFilter);
-    
+
     const tbody = document.getElementById('allDevicesTableBody');
     if (tbody) {
         tbody.innerHTML = filtered.map(dev => `
@@ -647,7 +823,7 @@ function renderFilteredDevices() {
                 <td>${dev.model}</td>
                 <td>${dev.workplace}</td>
                 <td>${dev.location}</td>
-                <td class="${dev.status}">${dev.value} ${dev.unit}</td>
+                <td class="${dev.status}">${typeof dev.value === 'number' ? dev.value.toFixed(1) : dev.value} ${dev.unit}</td>
                 <td><span class="status-dot ${dev.status}"></span> ${dev.status === 'normal' ? 'Норма' : (dev.status === 'warning' ? 'Попередження' : (dev.status === 'danger' ? 'Небезпека' : 'Критично'))}</td>
                 <td><button class="action-btn" onclick="event.stopPropagation(); showDeviceDetail('${dev.id}')">📊</button></td>
             </tr>
@@ -659,52 +835,47 @@ function renderFilteredDevices() {
 function initMap() {
     const container = document.getElementById('mapContainer');
     if (!container) return;
-    
-    // Очищаємо контейнер перед створенням
+
     container.innerHTML = '<div id="workplaceMap" style="height: 720px; width: 100%; border-radius: 12px;"></div>';
-    
-    // Створюємо карту
+
     if (map) map.remove();
     map = L.map('workplaceMap').setView([49.0, 32.0], 6);
-    
+
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CartoDB',
         subdomains: 'abcd',
         maxZoom: 19
     }).addTo(map);
-    
-    // Додаємо маркери для кожного робочого місця
+
     workplaces.forEach(workplace => {
-        // Визначаємо колір маркера на основі максимального статусу приладів
         let worstStatus = 'normal';
         workplace.equipment.forEach(dev => {
             if (dev.status === 'critical') worstStatus = 'critical';
             else if (dev.status === 'danger' && worstStatus !== 'critical') worstStatus = 'danger';
             else if (dev.status === 'warning' && worstStatus === 'normal') worstStatus = 'warning';
         });
-        
-        let markerColor = '#4ade80'; // normal
+
+        let markerColor = '#4ade80';
         if (worstStatus === 'warning') markerColor = '#fbbf24';
         else if (worstStatus === 'danger') markerColor = '#f87171';
         else if (worstStatus === 'critical') markerColor = '#ef4444';
-        
-        // Створюємо кастомну іконку
+
         const iconHtml = `
             <div style="background: ${markerColor}; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
                 <span style="color: white; font-size: 14px;">📍</span>
             </div>
         `;
-        
+
         const customIcon = L.divIcon({
             html: iconHtml,
             className: 'custom-marker',
             iconSize: [30, 30],
             popupAnchor: [0, -15]
         });
-        
+
         const marker = L.marker([workplace.lat, workplace.lng], { icon: customIcon }).addTo(map);
-        
-        // Створюємо HTML для popup
+
+        // ВИПРАВЛЕНО: додано округлення значень до 1 знаку після коми
         const deviceListHtml = workplace.equipment.map(dev => `
             <div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid #3a3a4a; border-radius: 6px;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -714,7 +885,7 @@ function initMap() {
                     </div>
                     <div style="text-align: right;">
                         <span style="color: ${dev.status === 'critical' ? '#ef4444' : (dev.status === 'danger' ? '#f87171' : (dev.status === 'warning' ? '#fbbf24' : '#4ade80'))}; font-weight: bold;">
-                            ${dev.value} ${dev.unit}
+                            ${typeof dev.value === 'number' ? dev.value.toFixed(1) : dev.value} ${dev.unit}
                         </span>
                         <br>
                         <button class="map-device-btn" onclick="event.stopPropagation(); goToDevice('${dev.id}')" style="background: #4a9eff; border: none; border-radius: 4px; padding: 2px 8px; margin-top: 4px; color: white; cursor: pointer; font-size: 11px;">
@@ -724,7 +895,7 @@ function initMap() {
                 </div>
             </div>
         `).join('');
-        
+
         const popupContent = `
             <div style="min-width: 250px; max-width: 350px; background: #1e1e2e; border-radius: 8px;">
                 <div style="background: #2a2a3a; padding: 10px; border-radius: 8px 8px 0 0;">
@@ -744,26 +915,20 @@ function initMap() {
                 </div>
             </div>
         `;
-        
+
         marker.bindPopup(popupContent);
         markers.push(marker);
     });
 }
 
 function goToDevice(deviceId) {
-    // Закриваємо popup
     map.closePopup();
-    
-    // Переходимо на вкладку ДАТЧИКИ
     openWindow('devices');
-    
-    // Знаходимо прилад в allDevices
+
     const device = allDevices.find(d => d.id === deviceId);
     if (device) {
-        // Затримка для того, щоб вкладка встигла відрендеритись
         setTimeout(() => {
             showDeviceDetail(deviceId);
-            // Прокручуємо до детальної панелі
             const detailPanel = document.getElementById('detailPanel');
             if (detailPanel) {
                 detailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -775,8 +940,7 @@ function goToDevice(deviceId) {
 function goToWorkplaceDevices(workplaceName) {
     map.closePopup();
     openWindow('devices');
-    
-    // Фільтруємо таблицю приладів за РМ
+
     setTimeout(() => {
         const workplaceFilter = document.getElementById('devFilterWorkplace');
         if (workplaceFilter) {
@@ -791,7 +955,7 @@ function goToWorkplaceDevices(workplaceName) {
 function showHourGraph(deviceId) {
     const device = allDevices.find(d => d.id === deviceId);
     if (!device) return;
-    
+
     const ctx = document.getElementById('hourHistoryChart');
     if (ctx) {
         if (hourChart) hourChart.destroy();
@@ -817,11 +981,86 @@ function showHourGraph(deviceId) {
     }
 }
 
+// ========== ЕКСПОРТ ДАНИХ В EXCEL ==========
+function exportDeviceExcel(deviceId) {
+    const device = allDevices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    let exportData = [];
+    let headers = ['Дата/Час'];
+
+    switch(device.type) {
+        case 'gamma':
+            headers.push('Доза (uSv/год)', 'Імпульси CPS');
+            exportData = device.history.map(h => ({
+                'Дата/Час': new Date(h.timestamp).toLocaleString(),
+                'Доза (uSv/год)': h.dose || h.value,
+                'Імпульси CPS': h.cps || Math.round(h.value * 100)
+            }));
+            break;
+        case 'spectro':
+            headers.push('Активність (uSv/год)');
+            exportData = device.history.map(h => ({
+                'Дата/Час': new Date(h.timestamp).toLocaleString(),
+                'Активність (uSv/год)': h.activity || h.value
+            }));
+            break;
+        case 'vfu':
+            headers.push('Швидкість (м/с)', 'Температура (°C)', 'Тиск (гПа)');
+            exportData = device.history.map(h => ({
+                'Дата/Час': new Date(h.timestamp).toLocaleString(),
+                'Швидкість (м/с)': h.speed || h.value,
+                'Температура (°C)': h.temperature || 20,
+                'Тиск (гПа)': h.pressure || 1013
+            }));
+            break;
+        case 'weather':
+            headers.push('Температура (°C)', 'Вологість (%)', 'Швидкість вітру (м/с)', 'Тиск (гПа)');
+            exportData = device.history.map(h => ({
+                'Дата/Час': new Date(h.timestamp).toLocaleString(),
+                'Температура (°C)': h.temperature || h.value,
+                'Вологість (%)': h.humidity || 65,
+                'Швидкість вітру (м/с)': h.windSpeed || 5,
+                'Тиск (гПа)': h.pressure || 1013
+            }));
+            break;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `${device.name}_${new Date().toISOString().slice(0,10)}`);
+    XLSX.writeFile(wb, `${device.name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    addNotification('success', '📊 Експорт виконано', `Дані ${device.name} експортовано в Excel`);
+}
+
+function exportAlarmEvents(deviceId) {
+    const device = allDevices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    const alarms = device.logs?.filter(l => l.type === 'error' || l.type === 'warning') || [];
+    if (alarms.length === 0) {
+        alert('Немає ALARM подій для цього приладу');
+        return;
+    }
+
+    const exportData = alarms.map(log => ({
+        'Дата/Час': new Date(log.timestamp).toLocaleString(),
+        'Тип': log.type.toUpperCase(),
+        'Повідомлення': log.message
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Alarms_${device.name}`);
+    XLSX.writeFile(wb, `Alarms_${device.name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+    addNotification('success', '🔔 Alarms експортовано', `Події ${device.name} експортовано в Excel`);
+}
+
 // ========== ЕКСПОРТ ЗВІТУ В PDF ==========
 function exportToPDF(deviceId) {
     const device = allDevices.find(d => d.id === deviceId);
     if (!device) return;
-    
+
     const printContent = `
         <html>
         <head>
@@ -840,28 +1079,28 @@ function exportToPDF(deviceId) {
             <p><strong>Серійний номер:</strong> ${device.serial}</p>
             <p><strong>Робоче місце:</strong> ${device.workplace}</p>
             <p><strong>IP адреса:</strong> ${device.ip}:${device.port}</p>
-            <p><strong>Поточне значення:</strong> ${device.value} ${device.unit}</p>
+            <p><strong>Поточне значення:</strong> ${typeof device.value === 'number' ? device.value.toFixed(1) : device.value} ${device.unit}</p>
             <p><strong>Статус:</strong> ${device.status === 'normal' ? 'Нормальний' : (device.status === 'warning' ? 'Попередження' : (device.status === 'danger' ? 'Небезпека' : 'Критичний'))}</p>
             <p><strong>Час роботи:</strong> ${device.uptime} днів</p>
             <p><strong>Дата створення звіту:</strong> ${new Date().toLocaleString()}</p>
-            
+
             <h2>📈 Історія вимірювань (останні 20 точок)</h2>
             <table>
                 <tr><th>Дата/Час</th><th>Значення (${device.unit})</th></tr>
-                ${device.history.slice(-20).reverse().map(h => `<td><td>${new Date(h.timestamp).toLocaleString()}</td><td>${h.value.toFixed(3)}</td></tr>`).join('')}
+                ${device.history.slice(-20).reverse().map(h => `<tr><td>${new Date(h.timestamp).toLocaleString()}</td><td>${h.value.toFixed(3)}</td></tr>`).join('')}
             </table>
-            
+
             <h2>📋 Журнал подій (останні 15)</h2>
             <table>
                 <tr><th>Дата/Час</th><th>Тип</th><th>Повідомлення</th></tr>
                 ${device.logs.slice(-15).reverse().map(log => `<tr><td>${new Date(log.timestamp).toLocaleString()}</td><td>${log.type.toUpperCase()}</td><td>${log.message}</td></tr>`).join('')}
             </table>
-            
+
             <p style="margin-top: 30px; font-size: 11px; color: #888;">Звіт згенеровано системою моніторингу радіації</p>
         </body>
         </html>
     `;
-    
+
     const win = window.open();
     win.document.write(printContent);
     win.document.close();
@@ -878,7 +1117,7 @@ async function loadAlarmDevices() {
         });
         if (!response.ok) throw new Error('Unauthorized');
         const serverDevices = await response.json();
-        
+
         alarmDevicesData = serverDevices.map(device => {
             const localDevice = allDevices.find(d => d.id == device.id);
             return {
@@ -916,13 +1155,13 @@ function renderAlarmTable(data) {
             statusText = 'НОРМА';
             statusClass = 'normal';
         }
-        
+
         return `
             <tr class="${statusClass}-row">
                 <td>${device.id}</td>
                 <td>${device.name}</td>
                 <td>${device.type}</td>
-                <td><strong>${device.current_value}</strong> ${device.unit}</td>
+                <td><strong>${typeof device.current_value === 'number' ? device.current_value.toFixed(1) : device.current_value}</strong> ${device.unit}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td style="min-width:200px">
                     <div class="alarm-levels">
@@ -939,29 +1178,29 @@ function renderAlarmTable(data) {
 
 function applyAlarmFilters() {
     let filtered = [...alarmDevicesData];
-    
+
     const areaFilter = document.getElementById('alarmFilterArea')?.value || 'all';
     const workplaceFilter = document.getElementById('alarmFilterWorkplace')?.value || 'all';
     const typeFilter = document.getElementById('alarmFilterType')?.value || 'all';
     const statusFilter = document.getElementById('alarmFilterStatus')?.value || 'all';
     const sortBy = document.getElementById('alarmSortBy')?.value || 'type';
-    
+
     if (areaFilter !== 'all') {
         filtered = filtered.filter(d => {
             const device = allDevices.find(dev => dev.id == d.id);
             return device && device.area === areaFilter;
         });
     }
-    
+
     if (workplaceFilter !== 'all') {
         filtered = filtered.filter(d => {
             const device = allDevices.find(dev => dev.id == d.id);
             return device && device.workplace === workplaceFilter;
         });
     }
-    
+
     if (typeFilter !== 'all') filtered = filtered.filter(d => d.type === typeFilter);
-    
+
     if (statusFilter !== 'all') {
         filtered = filtered.filter(d => {
             const device = allDevices.find(dev => dev.id == d.id);
@@ -973,13 +1212,13 @@ function applyAlarmFilters() {
             return false;
         });
     }
-    
+
     if (sortBy === 'type') filtered.sort((a,b) => a.type.localeCompare(b.type));
     if (sortBy === 'current_value') filtered.sort((a,b) => b.current_value - a.current_value);
     if (sortBy === 'warning') filtered.sort((a,b) => a.alarmLevels.warning - b.alarmLevels.warning);
     if (sortBy === 'danger') filtered.sort((a,b) => a.alarmLevels.danger - b.alarmLevels.danger);
     if (sortBy === 'critical') filtered.sort((a,b) => a.alarmLevels.critical - b.alarmLevels.critical);
-    
+
     renderAlarmTable(filtered);
 }
 
@@ -1019,17 +1258,17 @@ function saveAlarmLevels(deviceId, deviceName) {
     const warningLevel = parseFloat(document.getElementById('warningLevel').value);
     const dangerLevel = parseFloat(document.getElementById('dangerLevel').value);
     const criticalLevel = parseFloat(document.getElementById('criticalLevel').value);
-    
+
     if (isNaN(warningLevel) || isNaN(dangerLevel) || isNaN(criticalLevel)) {
         alert('Будь ласка, введіть коректні числові значення');
         return;
     }
-    
+
     if (warningLevel >= dangerLevel || dangerLevel >= criticalLevel) {
         alert('Рівні повинні бути в порядку зростання: ПОПЕРЕДЖЕННЯ < НЕБЕЗПЕКА < КРИТИЧНО');
         return;
     }
-    
+
     const device = allDevices.find(d => d.id === deviceId);
     if (device) {
         device.alarmLevels = {
@@ -1037,22 +1276,22 @@ function saveAlarmLevels(deviceId, deviceName) {
             danger: dangerLevel,
             critical: criticalLevel
         };
-        
+
         if (device.value >= criticalLevel) device.status = 'critical';
         else if (device.value >= dangerLevel) device.status = 'danger';
         else if (device.value >= warningLevel) device.status = 'warning';
         else device.status = 'normal';
-        
+
         loadAlarmDevices();
         renderFilteredDevices();
         renderWorkplaces();
-        
+
         addNotification('info', '⚙️ Налаштування змінено', `${deviceName}: нові рівні тривог (${warningLevel}/${dangerLevel}/${criticalLevel}) ${device.unit}`, deviceId);
-        
+
         const allAlarmSettings = JSON.parse(localStorage.getItem('deviceAlarmSettings') || '{}');
         allAlarmSettings[deviceId] = { warning: warningLevel, danger: dangerLevel, critical: criticalLevel };
         localStorage.setItem('deviceAlarmSettings', JSON.stringify(allAlarmSettings));
-        
+
         alert(`✅ Налаштування для ${deviceName} збережено!`);
         closeAlarmModal();
     } else {
@@ -1123,10 +1362,535 @@ function renderLogin() {
     `;
 }
 
+// ========== ПЕРЕМИКАННЯ ПІДВКЛАДОК МОНІТОРИНГУ ==========
+function switchMonitoringTab(tab) {
+    document.querySelectorAll('.monitoring-tab').forEach(t => t.classList.remove('active'));
+    const activeTab = document.querySelector(`.monitoring-tab[onclick="switchMonitoringTab('${tab}')"]`);
+    if (activeTab) activeTab.classList.add('active');
+
+    if (tab === 'rm') {
+        renderMonitoringRM();
+    } else if (tab === 'all') {
+        renderMonitoringAll();
+    }
+}
+
+// ========== МОНІТОРИНГ РМ (РОБОЧИХ МІСЦЬ) ==========
+function renderMonitoringRM() {
+    const container = document.getElementById('monitoringLayout');
+    if (!container) return;
+
+    const areas = [...new Set(allDevices.map(d => d.area))];
+    const workplacesList = [...new Set(allDevices.map(d => d.workplace))];
+
+    container.innerHTML = `
+        <div class="monitoring-sidebar">
+            <div class="filter-bar" style="flex-wrap: wrap; padding: 10px; gap: 6px; background: #1a1a2a;;">
+                <select id="monFilterType" class="filter-select" onchange="renderMonitoringRMList()" style="flex:1; min-width:100px; font-size:12px; padding:5px 8px;">
+                    <option value="all">Всі типи</option>
+                    <option value="gamma">Гама-детектори</option>
+                    <option value="spectro">Спектрометри</option>
+                    <option value="vfu">ВФУ</option>
+                    <option value="weather">Метеостанції</option>
+                </select>
+                <select id="monFilterWorkplace" class="filter-select" onchange="renderMonitoringRMList()" style="flex:1; min-width:100px; font-size:12px; padding:5px 8px;">
+                    <option value="all">Всі РМ</option>
+                    ${workplaces.map(w => `<option value="${w.name}">${w.name}</option>`).join('')}
+                </select>
+                <select id="monFilterArea" class="filter-select" onchange="renderMonitoringRMList()" style="flex:1; min-width:100px; font-size:12px; padding:5px 8px;">
+                    <option value="all">Всі області</option>
+                    ${areas.map(a => `<option value="${a}">${a}</option>`).join('')}
+                </select>
+                <select id="monFilterStatus" class="filter-select" onchange="renderMonitoringRMList()" style="flex:1; min-width:100px; font-size:12px; padding:5px 8px;">
+                    <option value="all">Всі стани</option>
+                    <option value="normal">🟢 Норма</option>
+                    <option value="warning">🟡 Попередження</option>
+                    <option value="danger">🔴 Небезпека</option>
+                    <option value="critical">❗ Критично</option>
+                </select>
+            </div>
+            <div class="workplaces-list" id="monitoringRMList"></div>
+        </div>
+        <div class="monitoring-detail-panel" id="monitoringRMDetail">
+            <div class="detail-placeholder">
+                <div class="placeholder-icon">📡</div>
+                <div class="placeholder-text">Виберіть прилад для перегляду деталей</div>
+                <div style="font-size:12px; color:#666; margin-top:8px;">Натисніть на прилад у списку ліворуч</div>
+            </div>
+        </div>
+    `;
+
+    renderMonitoringRMList();
+}
+
+function renderMonitoringRMList() {
+    const container = document.getElementById('monitoringRMList');
+    if (!container) return;
+
+    const typeFilter = document.getElementById('monFilterType')?.value || 'all';
+    const workplaceFilter = document.getElementById('monFilterWorkplace')?.value || 'all';
+    const areaFilter = document.getElementById('monFilterArea')?.value || 'all';
+    const statusFilter = document.getElementById('monFilterStatus')?.value || 'all';
+
+    let filteredWorkplaces = workplaces;
+    if (workplaceFilter !== 'all') filteredWorkplaces = filteredWorkplaces.filter(w => w.name === workplaceFilter);
+    if (areaFilter !== 'all') filteredWorkplaces = filteredWorkplaces.filter(w => w.area === areaFilter);
+
+    container.innerHTML = filteredWorkplaces.map(wp => {
+        let equipmentList = wp.equipment;
+        if (typeFilter !== 'all') equipmentList = equipmentList.filter(e => e.type === typeFilter);
+        if (statusFilter !== 'all') equipmentList = equipmentList.filter(e => e.status === statusFilter);
+
+        let worstStatus = 'normal';
+        equipmentList.forEach(dev => {
+            if (dev.status === 'critical') worstStatus = 'critical';
+            else if (dev.status === 'danger' && worstStatus !== 'critical') worstStatus = 'danger';
+            else if (dev.status === 'warning' && worstStatus === 'normal') worstStatus = 'warning';
+        });
+
+        let statusColor = '#4ade80';
+        if (worstStatus === 'warning') statusColor = '#fbbf24';
+        else if (worstStatus === 'danger') statusColor = '#f87171';
+        else if (worstStatus === 'critical') statusColor = '#ef4444';
+
+        return `
+            <div class="workplace-group">
+                <div class="workplace-header" onclick="toggleWorkplaceList('mon-wp-list-${wp.id}')">
+                    <div class="workplace-info">
+                        <span class="workplace-status" style="background: ${statusColor};"></span>
+                        <span class="workplace-name">🏭 ${wp.name}</span>
+                        <span class="workplace-location">(${wp.location})</span>
+                    </div>
+                    <span class="workplace-count">📡 ${equipmentList.length}</span>
+                </div>
+                <div class="workplace-devices show" id="mon-wp-list-${wp.id}">
+                    ${equipmentList.map(dev => `
+                        <div class="device-item" onclick="showMonitoringRMDetail('${dev.id}')">
+                            <div class="device-icon">${deviceTypes[dev.type]?.icon || '📡'}</div>
+                            <div class="device-info">
+                                <div class="device-name">${dev.name}</div>
+                                <div class="device-model">${dev.model}</div>
+                            </div>
+                            <div class="device-value" style="color: ${dev.status === 'critical' ? '#ef4444' : (dev.status === 'danger' ? '#f87171' : (dev.status === 'warning' ? '#fbbf24' : '#4ade80'))}">
+                                ${typeof dev.value === 'number' ? dev.value.toFixed(1) : dev.value} ${dev.unit}
+                            </div>
+                            <div class="device-status">
+                                <span class="status-dot ${dev.status}"></span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    document.querySelectorAll('.workplace-devices').forEach(el => el.classList.add('show'));
+}
+
+// ========== ВСІ ПРИЛАДИ (ТАБЛИЦЯ) ==========
+function renderMonitoringAll() {
+    const container = document.getElementById('monitoringLayout');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div style="width:100%; padding:20px; overflow-y:auto;">
+            <div class="filter-bar" style="flex-wrap: wrap; gap: 10px; margin-bottom:20px;">
+                <select id="monAllFilterType" class="filter-select" onchange="renderMonitoringAllList()">
+                    <option value="all">Всі типи</option>
+                    <option value="gamma">Гама-детектори</option>
+                    <option value="spectro">Спектрометри</option>
+                    <option value="vfu">ВФУ</option>
+                    <option value="weather">Метеостанції</option>
+                </select>
+                <select id="monAllFilterStatus" class="filter-select" onchange="renderMonitoringAllList()">
+                    <option value="all">Всі стани</option>
+                    <option value="normal">🟢 Норма</option>
+                    <option value="warning">🟡 Попередження</option>
+                    <option value="danger">🔴 Небезпека</option>
+                    <option value="critical">❗ Критично</option>
+                </select>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="devices-table">
+                    <thead>
+                        <tr><th>ТИП</th><th>НАЗВА</th><th>МОДЕЛЬ</th><th>РМ</th><th>ЛОКАЦІЯ</th><th>ЗНАЧЕННЯ</th><th>СТАН</th><th>ДІЇ</th></tr>
+                    </thead>
+                    <tbody id="monAllDevicesBody"></tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    renderMonitoringAllList();
+}
+
+function renderMonitoringAllList() {
+    const tbody = document.getElementById('monAllDevicesBody');
+    if (!tbody) return;
+
+    const typeFilter = document.getElementById('monAllFilterType')?.value || 'all';
+    const statusFilter = document.getElementById('monAllFilterStatus')?.value || 'all';
+
+    let filtered = [...allDevices];
+    if (typeFilter !== 'all') filtered = filtered.filter(d => d.type === typeFilter);
+    if (statusFilter !== 'all') filtered = filtered.filter(d => d.status === statusFilter);
+
+    tbody.innerHTML = filtered.map(dev => `
+        <tr onclick="showMonitoringRMDetail('${dev.id}')" style="cursor:pointer">
+            <td>${deviceTypes[dev.type]?.icon || '📡'} ${deviceTypes[dev.type]?.name || dev.type}</td>
+            <td>${dev.name}</td>
+            <td>${dev.model}</td>
+            <td>${dev.workplace}</td>
+            <td>${dev.location}</td>
+            <td class="${dev.status}">${typeof dev.value === 'number' ? dev.value.toFixed(1) : dev.value} ${dev.unit}</td>
+            <td><span class="status-dot ${dev.status}"></span> ${dev.status === 'normal' ? 'Норма' : (dev.status === 'warning' ? 'Попередження' : (dev.status === 'danger' ? 'Небезпека' : 'Критично'))}</td>
+            <td><button class="action-btn" onclick="event.stopPropagation(); showMonitoringRMDetail('${dev.id}')">📊</button></td>
+        </tr>
+    `).join('');
+}
+
+// ========== ДЕТАЛЬНИЙ ПЕРЕГЛЯД ПРИЛАДУ ==========
+function showMonitoringRMDetail(deviceId) {
+    const device = allDevices.find(d => d.id === deviceId);
+    if (!device) return;
+    currentMonitoringDevice = device;
+
+    const panel = document.getElementById('monitoringRMDetail');
+    if (!panel) return;
+
+    let statusText = '';
+    let statusClass = '';
+    if (device.status === 'normal') { statusText = '✅ Нормальний'; statusClass = 'normal'; }
+    else if (device.status === 'warning') { statusText = '⚠️ Попередження'; statusClass = 'warning'; }
+    else if (device.status === 'danger') { statusText = '🔴 Небезпека'; statusClass = 'danger'; }
+    else if (device.status === 'critical') { statusText = '❗ Критичний'; statusClass = 'critical'; }
+
+    let infoCards = '';
+    let chartsHtml = '';
+
+    switch(device.type) {
+        case 'gamma':
+            infoCards = `
+                <div class="info-card"><div class="info-label">📊 Доза</div><div class="info-value" style="color:#4a9eff;">${typeof (device.data?.dose || device.value) === 'number' ? (device.data?.dose || device.value).toFixed(1) : (device.data?.dose || device.value)} ${device.unit}</div></div>
+                <div class="info-card"><div class="info-label">⚡ Імпульси CPS</div><div class="info-value" style="color:#a78bfa;">${device.data?.cps ? Math.round(device.data.cps) : Math.round(device.value * 100)}</div></div>
+                <div class="info-card"><div class="info-label">⏱️ Час роботи</div><div class="info-value" style="color:#e0e0e0;">${device.uptime || 0} днів</div></div>
+                <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
+            `;
+            chartsHtml = `
+                <div class="chart-box"><div class="chart-title">📈 Доза (uSv/год)</div><canvas id="monitoringMainChart"></canvas></div>
+                <div class="chart-box"><div class="chart-title">⚡ Імпульси CPS</div><canvas id="monitoringImpulseChart"></canvas></div>
+            `;
+            break;
+
+        case 'spectro':
+            infoCards = `
+                <div class="info-card"><div class="info-label">📊 Активність</div><div class="info-value" style="color:#fbbf24;">${typeof (device.data?.activity || device.value) === 'number' ? (device.data?.activity || device.value).toFixed(1) : (device.data?.activity || device.value)} ${device.unit}</div></div>
+                <div class="info-card"><div class="info-label">📡 Енерг. спектр</div><div class="info-value" style="color:#a78bfa;">Cs-137 / Co-60</div></div>
+                <div class="info-card"><div class="info-label">⏱️ Час роботи</div><div class="info-value" style="color:#e0e0e0;">${device.uptime || 0} днів</div></div>
+                <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
+            `;
+            chartsHtml = `
+                <div class="chart-box"><div class="chart-title">📈 Активність (uSv/год)</div><canvas id="monitoringMainChart"></canvas></div>
+                <div class="chart-box"><div class="chart-title">⚡ Енергетичний спектр</div><canvas id="monitoringImpulseChart"></canvas></div>
+            `;
+            break;
+
+        case 'vfu':
+            infoCards = `
+                <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#60a5fa;">${device.data?.temperature || 20} °C</div></div>
+                <div class="info-card"><div class="info-label">💨 Швидкість потоку</div><div class="info-value" style="color:#34d399;">${typeof (device.data?.speed || device.value) === 'number' ? (device.data?.speed || device.value).toFixed(1) : (device.data?.speed || device.value)} ${device.unit}</div></div>
+                <div class="info-card"><div class="info-label">📊 Тиск</div><div class="info-value" style="color:#f472b6;">${device.data?.pressure || 1013} гПа</div></div>
+                <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
+            `;
+            chartsHtml = `
+                <div class="chart-box"><div class="chart-title">🌡️ Температура (°C)</div><canvas id="monitoringMainChart"></canvas></div>
+                <div class="chart-box"><div class="chart-title">💨 Швидкість потоку (м/с)</div><canvas id="monitoringImpulseChart"></canvas></div>
+            `;
+            break;
+
+        case 'weather':
+            infoCards = `
+                <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#f97316;">${device.data?.temperature || 20} °C</div></div>
+                <div class="info-card"><div class="info-label">💧 Вологість</div><div class="info-value" style="color:#60a5fa;">${device.data?.humidity || 65}%</div></div>
+                <div class="info-card"><div class="info-label">💨 Вітер</div><div class="info-value" style="color:#34d399;">${device.data?.windSpeed || 5} м/с</div></div>
+                <div class="info-card"><div class="info-label">📊 Тиск</div><div class="info-value" style="color:#f472b6;">${device.data?.pressure || 1013} гПа</div></div>
+            `;
+            chartsHtml = `
+                <div class="chart-box"><div class="chart-title">🌡️ Температура (°C)</div><canvas id="monitoringMainChart"></canvas></div>
+                <div class="chart-box"><div class="chart-title">💧 Вологість (%)</div><canvas id="monitoringImpulseChart"></canvas></div>
+            `;
+            break;
+    }
+
+    const gpsInfo = device.gps ? `${device.gps.lat.toFixed(6)}, ${device.gps.lng.toFixed(6)}` : 'Немає даних';
+
+    panel.innerHTML = `
+        <div class="monitoring-detail">
+            <div class="detail-header">
+                <div class="detail-title">${deviceTypes[device.type]?.icon || '📡'} ${device.name}</div>
+                <div class="detail-buttons">
+                    <span class="device-uptime">⏱️ Час роботи: ${device.uptime || 0} днів</span>
+                    <span class="device-status-badge ${device.status}">${device.status === 'normal' ? '🟢' : (device.status === 'warning' ? '🟡' : (device.status === 'danger' ? '🔴' : '🔴'))} ${statusText}</span>
+                    <button onclick="exportDeviceExcel('${device.id}')" class="btn-primary" style="background:#22c55e; padding:5px 12px; font-size:11px;">📊 Excel</button>
+                    <button onclick="exportAlarmEvents('${device.id}')" class="btn-primary" style="background:#f59e0b; padding:5px 12px; font-size:11px;">🔔 Alarms</button>
+                    <button onclick="goToDeviceFullDetail('${device.id}')" class="btn-primary" style="background:#4a9eff; padding:5px 12px; font-size:11px;">📡 Відкрити</button>
+                    <button onclick="closeMonitoringRMDetail()" class="action-btn" style="font-size:11px;">✕</button>
+                </div>
+            </div>
+
+            <div class="detail-info-grid">
+                ${infoCards}
+            </div>
+
+            <div class="gps-info">
+                <span>📍 GPS: ${gpsInfo}</span>
+            </div>
+
+            <div class="alarm-levels-bar">
+                <span style="color:#fbbf24;">⚠️ Попередження: ${device.alarmLevels?.warning || '—'}</span>
+                <span style="color:#f87171;">🔴 Небезпека: ${device.alarmLevels?.danger || '—'}</span>
+                <span style="color:#ef4444;">❗ Критично: ${device.alarmLevels?.critical || '—'}</span>
+                <button onclick="openAlarmModal('${device.id}', '${device.name}', ${device.alarmLevels?.warning || 0}, ${device.alarmLevels?.danger || 0}, ${device.alarmLevels?.critical || 0})" class="btn-primary" style="background:#f59e0b; padding:3px 10px; font-size:11px;">⚙️ Налаштувати</button>
+            </div>
+
+            <div class="monitoring-charts-grid">
+                ${chartsHtml}
+            </div>
+
+            <div class="alarms-tab">
+                <div class="alarms-tab-header" onclick="toggleAlarmsTab()">
+                    <span>🔔 Alarms (${device.logs?.filter(l => l.type === 'error' || l.type === 'warning').length || 0})</span>
+                    <span id="alarmsTabArrow">▼</span>
+                </div>
+                <div class="alarms-tab-content show" id="alarmsTabContent">
+                    ${device.logs?.slice().reverse().slice(0,15).map(log => `
+                        <div class="alarm-item">
+                            <span class="alarm-time">${new Date(log.timestamp).toLocaleString()}</span>
+                            <span class="alarm-status ${log.type === 'error' ? 'danger' : (log.type === 'warning' ? 'warning' : 'info')}">
+                                ${log.type === 'error' ? '🔴' : (log.type === 'warning' ? '⚠️' : 'ℹ️')}
+                            </span>
+                            <span class="alarm-message">${log.message}</span>
+                        </div>
+                    `).join('') || '<div style="padding:15px; color:#666;">Немає записів</div>'}
+                </div>
+            </div>
+        </div>
+    `;
+
+    initMonitoringCharts(device);
+}
+
+function closeMonitoringRMDetail() {
+    const panel = document.getElementById('monitoringRMDetail');
+    if (panel) {
+        if (monitoringChart) { monitoringChart.destroy(); monitoringChart = null; }
+        if (monitoringImpulseChart) { monitoringImpulseChart.destroy(); monitoringImpulseChart = null; }
+        if (monitoringDoseChart) { monitoringDoseChart.destroy(); monitoringDoseChart = null; }
+        panel.innerHTML = `
+            <div class="detail-placeholder">
+                <div class="placeholder-icon">📡</div>
+                <div class="placeholder-text">Виберіть прилад для перегляду деталей</div>
+                <div style="font-size:12px; color:#666; margin-top:8px;">Натисніть на прилад у списку ліворуч</div>
+            </div>
+        `;
+    }
+}
+
+function toggleAlarmsTab() {
+    const content = document.getElementById('alarmsTabContent');
+    const arrow = document.getElementById('alarmsTabArrow');
+    if (content) {
+        content.classList.toggle('show');
+        if (arrow) arrow.textContent = content.classList.contains('show') ? '▼' : '▶';
+    }
+}
+
+function goToDeviceFullDetail(deviceId) {
+    openWindow('devices');
+    setTimeout(() => {
+        showDeviceDetail(deviceId);
+        const detailPanel = document.getElementById('detailPanel');
+        if (detailPanel) {
+            detailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }, 300);
+}
+
+function toggleWorkplaceList(id) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.classList.toggle('show');
+        const header = el.previousElementSibling;
+        if (header) {
+            header.classList.toggle('expanded');
+        }
+    }
+}
+
+// ========== ГРАФІКИ ДЛЯ МОНІТОРИНГУ ==========
+function initMonitoringCharts(device) {
+    const mainCtx = document.getElementById('monitoringMainChart');
+    if (mainCtx) {
+        if (monitoringChart) monitoringChart.destroy();
+        
+        let borderColor = '#4ade80';
+        if (device.status === 'warning') borderColor = '#fbbf24';
+        else if (device.status === 'danger') borderColor = '#f87171';
+        else if (device.status === 'critical') borderColor = '#ef4444';
+        
+        let label = '';
+        let data = [];
+        
+        switch(device.type) {
+            case 'gamma':
+                label = `Доза (${device.unit})`;
+                data = device.history.map(h => h.dose || h.value);
+                break;
+            case 'spectro':
+                label = `Активність (${device.unit})`;
+                data = device.history.map(h => h.activity || h.value);
+                break;
+            case 'vfu':
+                label = `Температура (°C)`;
+                data = device.history.map(h => h.temperature || 20);
+                break;
+            case 'weather':
+                label = `Температура (°C)`;
+                data = device.history.map(h => h.temperature || h.value);
+                break;
+            default:
+                label = device.channel || 'Значення';
+                data = device.history.map(h => h.value || 0);
+        }
+        
+        monitoringChart = new Chart(mainCtx, {
+            type: 'line',
+            data: {
+                labels: device.history.map((_, i) => `${i} хв`),
+                datasets: [{
+                    label: label,
+                    data: data,
+                    borderColor: borderColor,
+                    backgroundColor: borderColor + '33',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#e0e0e0' } }
+                },
+                scales: {
+                    x: { grid: { color: '#2a2a3a' }, ticks: { color: '#8a8a9a', maxTicksLimit: 10 } },
+                    y: { grid: { color: '#2a2a3a' }, ticks: { color: '#8a8a9a' } }
+                }
+            }
+        });
+    }
+    
+    const impulseCtx = document.getElementById('monitoringImpulseChart');
+    if (impulseCtx) {
+        if (monitoringImpulseChart) monitoringImpulseChart.destroy();
+        
+        let label = '';
+        let data = [];
+        let chartType = 'line';
+        let color = '#a78bfa';
+        
+        switch(device.type) {
+            case 'gamma':
+                label = 'Імпульси CPS';
+                data = device.history.map(h => h.cps || Math.round((h.dose || h.value) * 100));
+                chartType = 'bar';
+                color = '#a78bfa';
+                break;
+            case 'spectro':
+                label = 'Енергетичний спектр';
+                const spectrum = generateSpectrumData();
+                data = spectrum.map(p => p.counts);
+                chartType = 'line';
+                color = '#fbbf24';
+                break;
+            case 'vfu':
+                label = 'Швидкість потоку (м/с)';
+                data = device.history.map(h => h.speed || h.value);
+                chartType = 'line';
+                color = '#60a5fa';
+                break;
+            case 'weather':
+                label = 'Вологість (%)';
+                data = device.history.map(h => h.humidity || 65);
+                chartType = 'line';
+                color = '#60a5fa';
+                break;
+            default:
+                label = 'Додатковий параметр';
+                data = device.history.map(h => h.value || 0);
+        }
+        
+        if (chartType === 'bar') {
+            monitoringImpulseChart = new Chart(impulseCtx, {
+                type: 'bar',
+                data: {
+                    labels: data.map((_, i) => `${i} хв`),
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        backgroundColor: color + '77',
+                        borderColor: color,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#e0e0e0' } }
+                    },
+                    scales: {
+                        x: { grid: { color: '#2a2a3a' }, ticks: { color: '#8a8a9a', maxTicksLimit: 10 } },
+                        y: { grid: { color: '#2a2a3a' }, ticks: { color: '#8a8a9a' } }
+                    }
+                }
+            });
+        } else {
+            monitoringImpulseChart = new Chart(impulseCtx, {
+                type: 'line',
+                data: {
+                    labels: data.map((_, i) => `${i} хв`),
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: color,
+                        backgroundColor: color + '33',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#e0e0e0' } }
+                    },
+                    scales: {
+                        x: { grid: { color: '#2a2a3a' }, ticks: { color: '#8a8a9a', maxTicksLimit: 10 } },
+                        y: { grid: { color: '#2a2a3a' }, ticks: { color: '#8a8a9a' } }
+                    }
+                }
+            });
+        }
+    }
+}
+
+// ========== ГОЛОВНА ФУНКЦІЯ ==========
 function renderMainApp() {
     uniqueAreas = [...new Set(allDevices.map(d => d.area))];
     uniqueWorkplaces = [...new Set(allDevices.map(d => d.workplace))];
-    
+
     document.getElementById('app').innerHTML = `
         <div class="app-container">
             <div class="sidebar" id="sidebar">
@@ -1148,6 +1912,10 @@ function renderMainApp() {
                         <div class="nav-icon">📡</div>
                         <div class="nav-text">ПРИЛАДИ</div>
                     </div>
+<div class="nav-item sub-item active" data-window="data-export" onclick="openWindow('data-export')">
+                            <div class="nav-icon">📤</div>
+                            <div class="nav-text">ВИВАНТАЖЕННЯ ДАНИХ</div>
+                        </div>
                     <div class="nav-item admin-parent" onclick="toggleAdminMenu()">
                         <div class="nav-icon">⚙️</div>
                         <div class="nav-text">АДМІНІСТРУВАННЯ</div>
@@ -1212,7 +1980,7 @@ function renderMainApp() {
                     </div>
                 </div>
                 <div class="windows-container" id="windowsContainer">
-<div id="window-map" class="window active">
+                    <div id="window-map" class="window active">
                         <div class="window-header">
                             <div class="window-title">🗺️ ІНТЕРАКТИВНА МАПА РАДІАЦІЙНОГО МОНІТОРИНГУ</div>
                             <button class="close-btn" onclick="closeWindow('map')">✕</button>
@@ -1221,27 +1989,55 @@ function renderMainApp() {
                             <div id="workplaceMap" style="height: 550px; width: 100%;"></div>
                         </div>
                     </div>
+
                     <div id="window-monitoring" class="window">
-                        <div class="window-header"><div class="window-title">📊 МОНІТОРИНГ РАДІАЦІЙНОЇ ОБСТАНОВКИ</div><button class="close-btn" onclick="closeWindow('monitoring')">✕</button></div>
-                        <div class="filter-bar">
-                            <select id="filterDeviceType" class="filter-select" onchange="renderWorkplaces()"><option value="all">Всі прилади</option><option value="gamma">Гама-детектори</option><option value="spectro">Спектрометри</option><option value="vfu">ВФУ</option><option value="weather">Метеостанції</option></select>
-                            <select id="filterWorkplace" class="filter-select" onchange="renderWorkplaces()"><option value="all">Всі РМ</option>${workplaces.map(w => `<option value="${w.name}">${w.name}</option>`).join('')}</select>
-                            <select id="filterArea" class="filter-select" onchange="renderWorkplaces()"><option value="all">Всі області</option>${uniqueAreas.map(a => `<option value="${a}">${a}</option>`).join('')}</select>
-                            <select id="filterStatus" class="filter-select" onchange="renderWorkplaces()"><option value="all">Всі стани</option><option value="normal">Норма</option><option value="warning">Попередження</option><option value="danger">Небезпека</option><option value="critical">Критично</option></select>
+                        <div class="window-header">
+                            <div class="window-title">📊 МОНІТОРИНГ РАДІАЦІЙНОЇ ОБСТАНОВКИ</div>
+                            <button class="close-btn" onclick="closeWindow('monitoring')">✕</button>
                         </div>
-                        <div class="workplaces-grid" id="workplacesGrid"></div>
-                        <div id="detailPanel" class="detail-panel"></div>
+                        <div class="monitoring-tabs">
+                            <button class="monitoring-tab active" onclick="switchMonitoringTab('rm')">🏭 Моніторинг РМ</button>
+                            <button class="monitoring-tab" onclick="switchMonitoringTab('all')">📡 Всі прилади</button>
+                        </div>
+                        <div class="monitoring-split-layout" id="monitoringLayout"></div>
                     </div>
+
                     <div id="window-devices" class="window">
                         <div class="window-header"><div class="window-title">📡 СПИСОК ВСІХ ПРИЛАДІВ</div><button class="close-btn" onclick="closeWindow('devices')">✕</button></div>
                         <div class="filter-bar">
-                            <select id="devFilterType" class="filter-select" onchange="renderFilteredDevices()"><option value="all">Всі типи</option><option value="gamma">Гама-детектори</option><option value="spectro">Спектрометри</option><option value="vfu">ВФУ</option><option value="weather">Метеостанції</option></select>
-                            <select id="devFilterWorkplace" class="filter-select" onchange="renderFilteredDevices()"><option value="all">Всі РМ</option>${workplaces.map(w => `<option value="${w.name}">${w.name}</option>`).join('')}</select>
-                            <select id="devFilterArea" class="filter-select" onchange="renderFilteredDevices()"><option value="all">Всі області</option>${uniqueAreas.map(a => `<option value="${a}">${a}</option>`).join('')}</select>
-                            <select id="devFilterStatus" class="filter-select" onchange="renderFilteredDevices()"><option value="all">Всі стани</option><option value="normal">Норма</option><option value="warning">Попередження</option><option value="danger">Небезпека</option><option value="critical">Критично</option></select>
+                            <select id="devFilterType" class="filter-select" onchange="renderFilteredDevices()">
+                                <option value="all">Всі типи</option>
+                                <option value="gamma">Гама-детектори</option>
+                                <option value="spectro">Спектрометри</option>
+                                <option value="vfu">ВФУ</option>
+                                <option value="weather">Метеостанції</option>
+                            </select>
+                            <select id="devFilterWorkplace" class="filter-select" onchange="renderFilteredDevices()">
+                                <option value="all">Всі РМ</option>
+                                ${workplaces.map(w => `<option value="${w.name}">${w.name}</option>`).join('')}
+                            </select>
+                            <select id="devFilterArea" class="filter-select" onchange="renderFilteredDevices()">
+                                <option value="all">Всі області</option>
+                                ${uniqueAreas.map(a => `<option value="${a}">${a}</option>`).join('')}
+                            </select>
+                            <select id="devFilterStatus" class="filter-select" onchange="renderFilteredDevices()">
+                                <option value="all">Всі стани</option>
+                                <option value="normal">Норма</option>
+                                <option value="warning">Попередження</option>
+                                <option value="danger">Небезпека</option>
+                                <option value="critical">Критично</option>
+                            </select>
                         </div>
-                        <div style="overflow-x:auto;"><table class="devices-table"><thead><tr><th>ТИП</th><th>НАЗВА</th><th>МОДЕЛЬ</th><th>РМ</th><th>ЛОКАЦІЯ</th><th>ЗНАЧЕННЯ</th><th>СТАН</th><th>ДІЇ</th></tr></thead><tbody id="allDevicesTableBody"></tbody></table></div>
+                        <div style="overflow-x:auto;">
+                            <table class="devices-table">
+                                <thead>
+                                    <tr><th>ТИП</th><th>НАЗВА</th><th>МОДЕЛЬ</th><th>РМ</th><th>ЛОКАЦІЯ</th><th>ЗНАЧЕННЯ</th><th>СТАН</th><th>ДІЇ</th></tr>
+                                </thead>
+                                <tbody id="allDevicesTableBody"></tbody>
+                            </table>
+                        </div>
                     </div>
+
                     <div id="window-users" class="window">
                         <div class="window-header"><div class="window-title">👥 УПРАВЛІННЯ КОРИСТУВАЧАМИ</div><button class="close-btn" onclick="closeWindow('users')">✕</button></div>
                         <div class="window-content">
@@ -1258,11 +2054,12 @@ function renderMainApp() {
                             </div>
                         </div>
                     </div>
+
                     <div id="window-permissions" class="window">
                         <div class="window-header"><div class="window-title">🔐 ПРАВА ДОСТУПУ</div><button class="close-btn" onclick="closeWindow('permissions')">✕</button></div>
-                        <div class="window-content" id="permissionsContainer">
-                        </div>
+                        <div class="window-content" id="permissionsContainer"></div>
                     </div>
+
                     <div id="window-alarms" class="window">
                         <div class="window-header"><div class="window-title">⚠️ НАЛАШТУВАННЯ ТРИВОГ ПРИЛАДІВ</div><button class="close-btn" onclick="closeWindow('alarms')">✕</button></div>
                         <div class="window-content">
@@ -1312,27 +2109,9 @@ function renderMainApp() {
             </div>
         </div>
     `;
-    
-    // Додаємо CSS для карти
-    const style = document.createElement('style');
-    style.textContent = `
-        .custom-marker {
-            background: transparent;
-        }
-        .map-device-btn:hover {
-            background: #3a8aff !important;
-        }
-        .leaflet-popup-content-wrapper {
-            background: #1e1e2e;
-            border-radius: 12px;
-        }
-        .leaflet-popup-tip {
-            background: #1e1e2e;
-        }
-    `;
-    document.head.appendChild(style);
-    
-    renderWorkplaces();
+
+    // Ініціалізація
+    renderMonitoringRM();
     renderFilteredDevices();
     renderUsersListTable();
     renderPermissionsTable();
@@ -1341,8 +2120,7 @@ function renderMainApp() {
     generateDeviceNotifications();
     loadSavedAlarmSettings();
     updateUserMenuDisplay();
-    
-    // Ініціалізуємо карту
+
     setTimeout(() => {
         initMap();
     }, 100);
@@ -1355,17 +2133,17 @@ function renderWorkplaces() {
     const workplaceFilter = document.getElementById('filterWorkplace')?.value || 'all';
     const areaFilter = document.getElementById('filterArea')?.value || 'all';
     const statusFilter = document.getElementById('filterStatus')?.value || 'all';
-    
+
     let filteredWorkplaces = workplaces;
     if (workplaceFilter !== 'all') filteredWorkplaces = filteredWorkplaces.filter(w => w.name === workplaceFilter);
     if (areaFilter !== 'all') filteredWorkplaces = filteredWorkplaces.filter(w => w.area === areaFilter);
-    
+
     container.innerHTML = filteredWorkplaces.map(wp => {
         let equipmentList = wp.equipment;
         if (typeFilter !== 'all') equipmentList = equipmentList.filter(e => e.type === typeFilter);
         if (statusFilter !== 'all') equipmentList = equipmentList.filter(e => e.status === statusFilter);
-        
-        return '<div class="workplace-card"><div class="workplace-header" onclick="toggleWorkplace(\'wp-' + wp.id + '\')"><div><div class="workplace-name">🏭 ' + wp.name + '</div><div class="workplace-location">📍 ' + wp.location + ' (' + wp.area + ')</div></div><span>📡 ' + equipmentList.length + ' приладів ▼</span></div><div class="workplace-equipment" id="wp-' + wp.id + '">' + equipmentList.map(dev => '<div class="equipment-item" onclick="showDeviceDetail(\'' + dev.id + '\')"><div><div class="equipment-name">' + (deviceTypes[dev.type]?.icon || '📡') + ' ' + dev.name + '</div><div style="font-size:11px;color:#8a8a9a;">' + dev.model + '</div></div><div class="equipment-status"><span class="status-dot ' + dev.status + '"></span><span>' + dev.value + ' ' + dev.unit + '</span></div></div>').join('') + '</div></div>';
+
+        return `<div class="workplace-card"><div class="workplace-header" onclick="toggleWorkplace('wp-' + wp.id)"><div><div class="workplace-name">🏭 ${wp.name}</div><div class="workplace-location">📍 ${wp.location} (${wp.area})</div></div><span>📡 ${equipmentList.length} приладів ▼</span></div><div class="workplace-equipment" id="wp-${wp.id}">${equipmentList.map(dev => `<div class="equipment-item" onclick="showDeviceDetail('${dev.id}')"><div><div class="equipment-name">${deviceTypes[dev.type]?.icon || '📡'} ${dev.name}</div><div style="font-size:11px;color:#8a8a9a;">${dev.model}</div></div><div class="equipment-status"><span class="status-dot ${dev.status}"></span><span>${typeof dev.value === 'number' ? dev.value.toFixed(1) : dev.value} ${dev.unit}</span></div></div>`).join('')}</div></div>`;
     }).join('');
 }
 
@@ -1375,18 +2153,18 @@ function showDeviceDetail(deviceId) {
     const panel = document.getElementById('detailPanel');
     if (!panel) return;
     panel.style.display = 'block';
-    
+
     let statusText = '';
     if (device.status === 'normal') statusText = '✅ Нормальний';
     else if (device.status === 'warning') statusText = '⚠️ Попередження';
     else if (device.status === 'danger') statusText = '🔴 Небезпека';
     else if (device.status === 'critical') statusText = '❗ Критичний';
     else statusText = device.status;
-    
+
     const warningLevel = device.alarmLevels ? device.alarmLevels.warning : '—';
     const dangerLevel = device.alarmLevels ? device.alarmLevels.danger : '—';
     const criticalLevel = device.alarmLevels ? device.alarmLevels.critical : '—';
-    
+
     panel.innerHTML = `
         <div class="detail-header">
             <div class="detail-title">📊 ${deviceTypes[device.type]?.icon || '📡'} ${device.name} (${device.model})</div>
@@ -1403,11 +2181,11 @@ function showDeviceDetail(deviceId) {
             <div class="detail-card"><div class="detail-label">Модель</div><div class="detail-value">${device.model || '—'}</div></div>
             <div class="detail-card"><div class="detail-label">IP адреса</div><div class="detail-value">${device.ip || '—'}:${device.port || '—'}</div></div>
             <div class="detail-card"><div class="detail-label">Канал</div><div class="detail-value">${device.channel || '—'}</div></div>
-            <div class="detail-card"><div class="detail-label">Значення</div><div class="detail-value ${device.status}">${device.value} ${device.unit}</div></div>
+            <div class="detail-card"><div class="detail-label">Значення</div><div class="detail-value ${device.status}">${typeof device.value === 'number' ? device.value.toFixed(1) : device.value} ${device.unit}</div></div>
             <div class="detail-card"><div class="detail-label">Статус</div><div class="detail-value ${device.status}">${statusText}</div></div>
             <div class="detail-card"><div class="detail-label">Рівні тривоги</div><div class="detail-value">
-                <span style="color:#fbbf24">⚠️ Попередження: ${warningLevel}</span> | 
-                <span style="color:#f87171">🔴 Небезпека: ${dangerLevel}</span> | 
+                <span style="color:#fbbf24">⚠️ Попередження: ${warningLevel}</span> |
+                <span style="color:#f87171">🔴 Небезпека: ${dangerLevel}</span> |
                 <span style="color:#ef4444">❗ Критично: ${criticalLevel}</span>
             </div></div>
             <div class="detail-card"><div class="detail-label">Час роботи</div><div class="detail-value">${device.uptime || 0} днів</div></div>
@@ -1428,7 +2206,7 @@ function showDeviceDetail(deviceId) {
             <div id="deviceLogs">${device.logs?.slice().reverse().slice(0,15).map(log => '<div class="log-entry ' + log.type + '">[' + new Date(log.timestamp).toLocaleString() + '] ' + log.type.toUpperCase() + ': ' + log.message + '</div>').join('') || '<div>Немає записів</div>'}</div>
         </div>
     `;
-    
+
     const ctx = document.getElementById('deviceHistoryChart');
     if (ctx && device.history && device.history.length > 0) {
         if (deviceChart) deviceChart.destroy();
@@ -1438,43 +2216,43 @@ function showDeviceDetail(deviceId) {
         else if (device.status === 'critical') borderColor = '#ef4444';
         deviceChart = new Chart(ctx, {
             type: 'line',
-            data: { 
-                labels: device.history.map(h => new Date(h.timestamp).toLocaleTimeString()), 
-                datasets: [{ 
-                    label: device.channel + ' (' + device.unit + ')', 
-                    data: device.history.map(h => h.value), 
-                    borderColor: borderColor, 
-                    fill: true, 
-                    tension: 0.2 
-                }] 
+            data: {
+                labels: device.history.map(h => new Date(h.timestamp).toLocaleTimeString()),
+                datasets: [{
+                    label: device.channel + ' (' + device.unit + ')',
+                    data: device.history.map(h => h.value),
+                    borderColor: borderColor,
+                    fill: true,
+                    tension: 0.2
+                }]
             },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: true, 
-                plugins: { legend: { labels: { color: '#e0e0e0' } } } 
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { labels: { color: '#e0e0e0' } } }
             }
         });
     }
-    
+
     const hourCtx = document.getElementById('hourHistoryChart');
     if (hourCtx && device.hourHistory && device.hourHistory.length > 0) {
         if (hourChart) hourChart.destroy();
         hourChart = new Chart(hourCtx, {
             type: 'line',
-            data: { 
-                labels: device.hourHistory.map(h => h.minute + ' хв'), 
-                datasets: [{ 
-                    label: device.channel + ' за останню годину (' + device.unit + ')', 
-                    data: device.hourHistory.map(h => h.value), 
-                    borderColor: '#4a9eff', 
-                    fill: true, 
-                    tension: 0.2 
-                }] 
+            data: {
+                labels: device.hourHistory.map(h => h.minute + ' хв'),
+                datasets: [{
+                    label: device.channel + ' за останню годину (' + device.unit + ')',
+                    data: device.hourHistory.map(h => h.value),
+                    borderColor: '#4a9eff',
+                    fill: true,
+                    tension: 0.2
+                }]
             },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: true, 
-                plugins: { legend: { labels: { color: '#e0e0e0' } } } 
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { labels: { color: '#e0e0e0' } } }
             }
         });
     }
@@ -1509,9 +2287,9 @@ function simulateError(deviceId) {
     showDeviceDetail(deviceId);
 }
 
-function toggleWorkplace(id) { 
-    const el = document.getElementById(id); 
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none'; 
+function toggleWorkplace(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function openWindow(id) {
@@ -1539,7 +2317,7 @@ function openWindow(id) {
     }
 }
 
-function closeWindow(id) { 
+function closeWindow(id) {
     const win = document.getElementById('window-' + id);
     if (win) win.classList.add('hidden');
     openWindow('map');
@@ -1552,17 +2330,17 @@ function updateUserMenuDisplay() {
     }
 }
 
-function toggleSidebar() { 
-    document.getElementById('sidebar').classList.toggle('collapsed'); 
+function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('collapsed');
 }
 
-function toggleUserMenu() { 
-    document.getElementById('userDropdown').classList.toggle('show'); 
+function toggleUserMenu() {
+    document.getElementById('userDropdown').classList.toggle('show');
 }
 
-function closeModal() { 
-    const modal = document.querySelector('.modal'); 
-    if (modal) modal.remove(); 
+function closeModal() {
+    const modal = document.querySelector('.modal');
+    if (modal) modal.remove();
 }
 
 function toggleLangDropdown() {
@@ -1579,10 +2357,10 @@ function selectLanguage(langCode, flag, langName) {
     document.getElementById('currentLangName').innerHTML = langName;
     currentLang = langCode;
     localStorage.setItem('language', langCode);
-    const titles = { 
+    const titles = {
         uk: { map: 'МАПА', monitoring: 'МОНІТОРИНГ', devices: 'ДАТЧИКИ', users: 'КОРИСТУВАЧІ', permissions: 'ПРАВА ДОСТУПУ', alarms: 'НАЛАШТУВАННЯ ТРИВОГ', logout: 'ВИХІД' },
         en: { map: 'MAP', monitoring: 'MONITORING', devices: 'DEVICES', users: 'USERS', permissions: 'PERMISSIONS', alarms: 'ALARM SETTINGS', logout: 'LOGOUT' },
-        es: { map: 'MAPA', monitoring: 'MONITOREO', devices: 'DISPOSITIVOS', users: 'USUARIOS', permissions: 'PERMISOS', alarms: 'AJUSTES DE ALARMA', logout: 'SALIR' } 
+        es: { map: 'MAPA', monitoring: 'MONITOREO', devices: 'DISPOSITIVOS', users: 'USUARIOS', permissions: 'PERMISOS', alarms: 'AJUSTES DE ALARMA', logout: 'SALIR' }
     };
     const navMap = document.querySelector('.nav-item[data-window="map"] .nav-text');
     if (navMap) navMap.innerText = titles[langCode].map;
@@ -1605,9 +2383,9 @@ function selectLanguage(langCode, flag, langName) {
 function handleLogin() {
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
-    
+
     const user = users.find(u => u.email === email);
-    
+
     if (user && user.status === 'active') {
         authToken = 'dummy-token-' + Date.now();
         currentUser = {
