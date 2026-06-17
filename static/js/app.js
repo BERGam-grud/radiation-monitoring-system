@@ -1650,27 +1650,18 @@ function showMonitoringRMDetail(deviceId) {
     let chartsHtml = '';
 
     switch(device.type) {
-case 'gamma':
-    // Якщо увімкнено режим експерта - показуємо його
-    if (device.expertMode) {
-        renderExpertMode(device);
-        return;
-    }
-    // Стандартний режим
+	case 'gamma':
+    // Стандартний режим з картками
     infoCards = `
         <div class="info-card"><div class="info-label">📊 Потужність</div><div class="info-value" style="color:#4a9eff;">${typeof (device.data?.dose || device.value) === 'number' ? (device.data?.dose || device.value).toFixed(1) : device.value} ${device.unit}</div></div>
         <div class="info-card"><div class="info-label">⚡ Імпульси CPS</div><div class="info-value" style="color:#a78bfa;">${device.data?.cps ? Math.round(device.data.cps) : Math.round(device.value * 100)}</div></div>
         <div class="info-card"><div class="info-label">⏱️ Час роботи</div><div class="info-value" style="color:#e0e0e0;">${device.uptime || 0} днів</div></div>
         <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
     `;
+    // Відразу показуємо режим експерта (без графіків та кнопки)
     chartsHtml = `
-        <div class="chart-box"><div class="chart-title">📈 Потужність (uSv/год)</div><canvas id="monitoringMainChart"></canvas></div>
-        <div class="chart-box"><div class="chart-title">⚡ Імпульси CPS</div><canvas id="monitoringImpulseChart"></canvas></div>
-        <div class="chart-box" style="grid-column: 1 / -1;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div class="chart-title">🔬 Режим експерта</div>
-                <button onclick="toggleExpertMode('${device.id}')" class="btn-primary" style="background:#00ff41; color:#0a0a12; padding:5px 15px; font-size:12px;">⚡ УВІМКНУТИ РЕЖИМ ЕКСПЕРТА</button>
-            </div>
+        <div class="expert-mode-placeholder" style="grid-column: 1 / -1; margin-top: 10px;">
+            ${renderExpertModeHTML(device)}
         </div>
     `;
     break;
@@ -1859,10 +1850,17 @@ function initMonitoringCharts(device) {
         let data = [];
 
         switch(device.type) {
-            case 'gamma':
-                label = `Потужність (${device.unit})`;
-                data = device.history.map(h => h.dose || h.value);
-                break;
+	case 'gamma':
+    // Для гамма-детектора НЕ створюємо графіки (вони не потрібні, бо є режим експерта)
+    if (monitoringChart) {
+        monitoringChart.destroy();
+        monitoringChart = null;
+    }
+    if (monitoringImpulseChart) {
+        monitoringImpulseChart.destroy();
+        monitoringImpulseChart = null;
+    }
+    return;
             case 'spectro':
                 label = `Активність (${device.unit})`;
                 data = device.history.map(h => h.activity || h.value);
@@ -2161,7 +2159,123 @@ function renderExpertMode(device) {
         drawExpertSpectrum(spectrumData);
     }, 150);
 }
+function renderExpertModeHTML(device) {
+    // Генеруємо спектр якщо його немає
+    if (!device.data?.spectrum) {
+        device.data = device.data || {};
+        device.data.spectrum = generateSpectrumData();
+    }
+    
+    let spectrumData = device.data.spectrum;
+    
+    // Оновлюємо статус
+    let statusText = '';
+    let statusClass = '';
+    const gammaValue = typeof device.value === 'number' ? device.value : 0;
+    if (gammaValue > 0.30) {
+        statusText = 'КРИТИЧНО!';
+        statusClass = 'critical';
+    } else if (gammaValue > 0.25) {
+        statusText = 'ПОПЕРЕДЖЕННЯ';
+        statusClass = 'warning';
+    } else {
+        statusText = 'НОРМА';
+        statusClass = 'normal';
+    }
 
+    // Розраховуємо показники
+    const dose = gammaValue;
+    const error = (Math.random() * 10 + 10).toFixed(0);
+    const load = Math.round(dose * 100 + Math.random() * 50 + 150);
+    const accumulationTime = Math.floor(Math.random() * 30 + 10);
+    const temperature = (20 + Math.random() * 5).toFixed(1);
+    
+    // Поточний час
+    const now = new Date();
+    const timeStr = now.toTimeString().slice(0,8);
+    const dateStr = now.toISOString().slice(0,10);
+
+    return `
+        <div class="expert-mode-container" style="background: #0d0d1a; border-radius: 12px; padding: 20px; border: 1px solid #00ff4133; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #00ff4133; padding-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">⚡</span>
+                    <span style="font-weight: bold; color: #00ff41; font-size: 16px;">РЕЖИМ ЕКСПЕРТА</span>
+                    <span style="font-size: 11px; color: #8a8a9a; margin-left: 10px;">Детальний перегляд спектру</span>
+                </div>
+                <button onclick="refreshExpertSpectrum('${device.id}')" style="background: #4a9eff22; border: 1px solid #4a9eff; color: #4a9eff; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔄 ОНОВИТИ</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- Ліва колонка - параметри -->
+                <div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 15px; background: #14141e; padding: 15px; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Потужність дози:</span>
+                            <span style="font-weight: bold; color: ${gammaValue > 0.30 ? '#ef4444' : (gammaValue > 0.25 ? '#fbbf24' : '#4ade80')}">${dose.toFixed(2)} мкЗв/год</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Похибка:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${error}%</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Завантаження:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${load} імп./с</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Самоконтроль:</span>
+                            <span style="font-weight: bold; color: #4ade80;">✅ ОК</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Накопичення:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${accumulationTime} с</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Температура:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${temperature} °C</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Час початку:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${timeStr}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Дата:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${dateStr}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button onclick="startExpertAccumulation('${device.id}')" style="background: #4a9eff; border: none; padding: 6px 16px; border-radius: 6px; color: white; cursor: pointer;">📊 НОВЕ НАКОПИЧЕННЯ</button>
+                        <button onclick="exportExpertData('${device.id}')" style="background: #3a3a4a; border: none; padding: 6px 16px; border-radius: 6px; color: #e0e0e0; cursor: pointer;">📤 ОБМІН</button>
+                    </div>
+                </div>
+
+                <!-- Права колонка - спектр -->
+                <div>
+                    <div style="background: #0d0d1a; border-radius: 8px; padding: 10px; border: 1px solid #1a1a2e;">
+                        <div style="display: flex; justify-content: space-between; color: #8a8a9a; font-size: 10px; margin-bottom: 5px;">
+                            <span>ЕНЕРГЕТИЧНИЙ СПЕКТР</span>
+                            <span>Cs-137 / Co-60</span>
+                        </div>
+                        <canvas id="expertSpectrumCanvas" style="width: 100%; height: 160px;"></canvas>
+                        <div style="display: flex; justify-content: space-between; color: #8a8a9a; font-size: 9px; margin-top: 2px;">
+                            <span>0</span>
+                            <span>200</span>
+                            <span>400</span>
+                            <span>600</span>
+                            <span>800</span>
+                            <span>1000</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 20px; margin-top: 10px; font-size: 12px; color: #8a8a9a;">
+                        <div>📡 ${device.name}</div>
+                        <div>🔢 ${device.serial || 'N/A'}</div>
+                        <div>Статус: <span style="font-weight: bold; color: ${gammaValue > 0.30 ? '#ef4444' : (gammaValue > 0.25 ? '#fbbf24' : '#4ade80')}">${statusText}</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
 function drawExpertSpectrum(spectrumData) {
     const canvas = document.getElementById('expertSpectrumCanvas');
     if (!canvas) {
