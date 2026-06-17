@@ -47,11 +47,18 @@ const deviceTypes = {
         params: ['Активність', 'Енергетичний спектр']
     },
     vfu: {
-        name: 'Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря',
+ name: 'Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря',
         icon: '💨',
         unit: 'м/с',
         color: '#60a5fa',
-        params: ['Температура', 'Швидкість потоку', 'Тиск', 'Прогаз повітря','Поточна витрата повітря ','Сумарна витрата повітря (накопичений об`єм)', 'Загальний час прокачування повітря від початку сесії' ]
+        params: [
+            'Температура',
+            'Швидкість потоку', 
+            'Тиск',
+            'Прогаз повітря',
+            'Поточна витрата повітря',
+            'Сумарна витрата повітря (накопичений об\'єм)',
+            'Загальний час прокачування повітря від початку сесії'
     },
     weather: {
         name: 'Метеостанція',
@@ -124,28 +131,38 @@ function generateDeviceData(type, count = 100) {
             };
             break;
 
-        case 'vfu':
+case 'vfu':
             baseValue = 3 + Math.random() * 4;
             for (let i = 0; i < count; i++) {
                 let speed = baseValue + (Math.random() - 0.5) * 1;
                 let temp = 20 + (Math.random() - 0.5) * 5;
                 let pressure = 1013 + (Math.random() - 0.5) * 20;
+                // Нові параметри для ПФУ
+                let currentFlow = 0.5 + Math.random() * 1.5; // м³/хв
+                let totalFlow = currentFlow * (i + 1) * 0.5 + Math.random() * 10; // м³ (накопичений)
+                let totalTime = (i + 1) * 60 + Math.random() * 30; // секунд від початку сесії
+                
                 data.push({
                     timestamp: Date.now() - (count - i) * 60000,
                     speed: Number(Math.max(0, speed).toFixed(1)),
                     temperature: Number(temp.toFixed(1)),
-                    pressure: Number(pressure.toFixed(1))
+                    pressure: Number(pressure.toFixed(1)),
+                    currentFlow: Number(Math.max(0.1, currentFlow).toFixed(2)),      // м³/хв
+                    totalFlow: Number(Math.max(0, totalFlow).toFixed(2)),             // м³
+                    totalTime: Number(Math.max(0, totalTime).toFixed(0))              // секунд
                 });
             }
             params = {
                 speed: Number(data[data.length-1].speed.toFixed(1)),
                 temperature: Number(data[data.length-1].temperature.toFixed(1)),
                 pressure: Number(data[data.length-1].pressure.toFixed(1)),
+                currentFlow: Number(data[data.length-1].currentFlow.toFixed(2)),
+                totalFlow: Number(data[data.length-1].totalFlow.toFixed(2)),
+                totalTime: Number(data[data.length-1].totalTime.toFixed(0)),
                 unit: 'м/с',
                 status: 'normal'
             };
             break;
-
         case 'weather':
             baseValue = 15 + Math.random() * 10;
             for (let i = 0; i < count; i++) {
@@ -308,26 +325,30 @@ for (let i = 1; i <= 10; i++) {
                 gps: { lat: coords.lat + latOffset + 0.02, lng: coords.lng + lngOffset + 0.02 }
             },
             {
-                id: `wp${i}_vfu`,
-                type: 'vfu',
-                name: deviceTypes.vfu.name,
-                model: `VFU-${100 + i}`,
-                serial: `VFU-${2024000 + i}`,
-                value: Number(vfuData.params.speed.toFixed(1)),
-                status: 'normal',
-                channel: 'Швидкість потоку',
-                unit: deviceTypes.vfu.unit,
-                ip: `192.168.4.${220 + i}`,
-                port: 7000 + i,
-                uptime: Math.floor(Math.random() * 30) + 1,
-                lastUpdate: new Date(),
-                history: vfuData.data,
-                data: vfuData.params,
-                logs: generateRandomLogs('Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря', 20),
-                errors: Math.floor(Math.random() * 3),
-                alarmLevels: { warning: 5.0, danger: 8.0, critical: 10.0 },
-                gps: { lat: coords.lat + latOffset + 0.015, lng: coords.lng + lngOffset + 0.015 }
-            },
+ id: `wp${i}_vfu`,
+            type: 'vfu',
+            name: deviceTypes.vfu.name,
+            model: `VFU-${100 + i}`,
+            serial: `VFU-${2024000 + i}`,
+            value: Number(vfuData.params.speed.toFixed(1)),
+            status: 'normal',
+            channel: 'Швидкість потоку',
+            unit: deviceTypes.vfu.unit,
+            ip: `192.168.4.${220 + i}`,
+            port: 7000 + i,
+            uptime: Math.floor(Math.random() * 30) + 1,
+            lastUpdate: new Date(),
+            history: vfuData.data,
+            data: vfuData.params,
+            logs: generateRandomLogs('Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря', 20),
+            errors: Math.floor(Math.random() * 3),
+            alarmLevels: { warning: 5.0, danger: 8.0, critical: 10.0 },
+            gps: { lat: coords.lat + latOffset + 0.015, lng: coords.lng + lngOffset + 0.015 },
+            // Нові параметри для ПФУ
+            currentFlow: Number(vfuData.params.currentFlow || (0.5 + Math.random() * 1.5).toFixed(2)),
+            totalFlow: Number(vfuData.params.totalFlow || (Math.random() * 100).toFixed(2)),
+            totalTime: Number(vfuData.params.totalTime || (Math.random() * 3600 + 60).toFixed(0))
+        },
             {
                 id: `wp${i}_weather`,
                 type: 'weather',
@@ -655,7 +676,45 @@ function loadRoles() {
         });
     }
 }
+function updateVFUData(device) {
+    if (device.type !== 'vfu') return;
+    
+    // Оновлюємо значення з невеликими випадковими змінами
+    const currentFlow = (device.currentFlow || 0.5) + (Math.random() - 0.5) * 0.1;
+    const totalFlow = (device.totalFlow || 0) + currentFlow * (0.5 + Math.random() * 0.5) / 60;
+    const totalTime = (device.totalTime || 0) + 5 + Math.random() * 10;
+    
+    device.currentFlow = Number(Math.max(0.1, currentFlow).toFixed(2));
+    device.totalFlow = Number(Math.max(0, totalFlow).toFixed(2));
+    device.totalTime = Number(Math.max(0, totalTime).toFixed(0));
+    
+    // Оновлюємо в data
+    if (device.data) {
+        device.data.currentFlow = device.currentFlow;
+        device.data.totalFlow = device.totalFlow;
+        device.data.totalTime = device.totalTime;
+    }
+}
 
+// Додаємо в функцію оновлення всіх даних
+function updateAllDevicesData() {
+    allDevices.forEach(device => {
+        // ... оновлення для інших типів ...
+        
+        if (device.type === 'vfu') {
+            updateVFUData(device);
+        }
+    });
+}
+
+// Запускаємо оновлення кожні 10 секунд
+setInterval(() => {
+    updateAllDevicesData();
+    // Оновлюємо відображення, якщо відкрито VFU
+    if (currentMonitoringDevice && currentMonitoringDevice.type === 'vfu') {
+        showMonitoringRMDetail(currentMonitoringDevice.id);
+    }
+}, 10000);
 // ========== СИСТЕМА СПОВІЩЕНЬ ==========
 let notifications = [];
 let notificationId = 0;
@@ -1019,13 +1078,17 @@ function exportDeviceExcel(deviceId) {
                 'Активність (uSv/год)': h.activity || h.value
             }));
             break;
-        case 'vfu':
-            headers.push('Швидкість (м/с)', 'Температура (°C)', 'Тиск (гПа)');
+case 'vfu':
+            headers.push('Швидкість (м/с)', 'Температура (°C)', 'Тиск (гПа)', 
+                         'Поточна витрата (м³/хв)', 'Сумарна витрата (м³)', 'Час сесії (с)');
             exportData = device.history.map(h => ({
                 'Дата/Час': new Date(h.timestamp).toLocaleString(),
-                'Швидкість (м/с)': h.speed || h.value,
+                'Швидкість (м/с)': h.speed || h.value || 0,
                 'Температура (°C)': h.temperature || 20,
-                'Тиск (гПа)': h.pressure || 1013
+                'Тиск (гПа)': h.pressure || 1013,
+                'Поточна витрата (м³/хв)': h.currentFlow || device.currentFlow || 0,
+                'Сумарна витрата (м³)': h.totalFlow || device.totalFlow || 0,
+                'Час сесії (с)': h.totalTime || device.totalTime || 0
             }));
             break;
         case 'weather':
@@ -1619,19 +1682,39 @@ case 'gamma':
             `;
             break;
 
-        case 'vfu':
+case 'vfu':
+            // Додаємо нові параметри в infoCards
             infoCards = `
                 <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#60a5fa;">${device.data?.temperature || 20} °C</div></div>
                 <div class="info-card"><div class="info-label">💨 Швидкість потоку</div><div class="info-value" style="color:#34d399;">${typeof (device.data?.speed || device.value) === 'number' ? (device.data?.speed || device.value).toFixed(1) : device.value} ${device.unit}</div></div>
                 <div class="info-card"><div class="info-label">📊 Тиск</div><div class="info-value" style="color:#f472b6;">${device.data?.pressure || 1013} гПа</div></div>
+                <div class="info-card"><div class="info-label">💨 Поточна витрата</div><div class="info-value" style="color:#a78bfa;">${device.data?.currentFlow || device.currentFlow || 0} м³/хв</div></div>
+                <div class="info-card"><div class="info-label">📦 Сумарна витрата</div><div class="info-value" style="color:#fbbf24;">${device.data?.totalFlow || device.totalFlow || 0} м³</div></div>
+                <div class="info-card"><div class="info-label">⏱️ Час сесії</div><div class="info-value" style="color:#e0e0e0;">${formatTotalTime(device.data?.totalTime || device.totalTime || 0)}</div></div>
                 <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
             `;
             chartsHtml = `
                 <div class="chart-box"><div class="chart-title">🌡️ Температура (°C)</div><canvas id="monitoringMainChart"></canvas></div>
                 <div class="chart-box"><div class="chart-title">💨 Швидкість потоку (м/с)</div><canvas id="monitoringImpulseChart"></canvas></div>
+                <div class="chart-box" style="grid-column: 1 / -1;">
+                    <div class="chart-title">📊 Додаткові параметри ПФУ</div>
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin-top:10px;">
+                        <div style="background:#2a2a3a; padding:15px; border-radius:8px; text-align:center;">
+                            <div style="font-size:12px; color:#8a8a9a;">💨 Поточна витрата</div>
+                            <div style="font-size:20px; font-weight:bold; color:#a78bfa;">${device.data?.currentFlow || device.currentFlow || 0} м³/хв</div>
+                        </div>
+                        <div style="background:#2a2a3a; padding:15px; border-radius:8px; text-align:center;">
+                            <div style="font-size:12px; color:#8a8a9a;">📦 Сумарна витрата (накопичений об'єм)</div>
+                            <div style="font-size:20px; font-weight:bold; color:#fbbf24;">${device.data?.totalFlow || device.totalFlow || 0} м³</div>
+                        </div>
+                        <div style="background:#2a2a3a; padding:15px; border-radius:8px; text-align:center;">
+                            <div style="font-size:12px; color:#8a8a9a;">⏱️ Загальний час прокачування</div>
+                            <div style="font-size:20px; font-weight:bold; color:#60a5fa;">${formatTotalTime(device.data?.totalTime || device.totalTime || 0)}</div>
+                        </div>
+                    </div>
+                </div>
             `;
             break;
-
         case 'weather':
             infoCards = `
                 <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#f97316;">${device.data?.temperature || 20} °C</div></div>
@@ -1645,7 +1728,20 @@ case 'gamma':
             `;
             break
     }
-
+function formatTotalTime(seconds) {
+    if (!seconds || seconds < 0) return '0с';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return `${hours}г ${minutes}хв ${secs}с`;
+    } else if (minutes > 0) {
+        return `${minutes}хв ${secs}с`;
+    } else {
+        return `${secs}с`;
+    }
+}
     const gpsInfo = device.gps ? `${device.gps.lat.toFixed(6)}, ${device.gps.lng.toFixed(6)}` : 'Немає даних';
 
     panel.innerHTML = `
