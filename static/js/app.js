@@ -47,11 +47,18 @@ const deviceTypes = {
         params: ['Активність', 'Енергетичний спектр']
     },
     vfu: {
-        name: 'Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря',
+ name: 'Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря',
         icon: '💨',
         unit: 'м/с',
         color: '#60a5fa',
-        params: ['Температура', 'Швидкість потоку', 'Тиск', 'Прогаз повітря','Поточна витрата повітря ','Сумарна витрата повітря (накопичений об`єм)', 'Загальний час прокачування повітря від початку сесії' ]
+        params: [
+            'Температура',
+            'Швидкість потоку', 
+            'Тиск',
+            'Прогаз повітря',
+            'Поточна витрата повітря',
+            'Сумарна витрата повітря (накопичений об\'єм)',
+            'Загальний час прокачування повітря від початку сесії']
     },
     weather: {
         name: 'Метеостанція',
@@ -123,24 +130,38 @@ function generateDeviceData(type, count = 100) {
                 status: 'normal'
             };
             break;
-
-        case 'vfu':
+		case 'vfu':
             baseValue = 3 + Math.random() * 4;
+            let totalFlowAccum = 0;
+            let totalTimeAccum = 0;
+            
             for (let i = 0; i < count; i++) {
                 let speed = baseValue + (Math.random() - 0.5) * 1;
                 let temp = 20 + (Math.random() - 0.5) * 5;
                 let pressure = 1013 + (Math.random() - 0.5) * 20;
+                
+                // НОВІ ПАРАМЕТРИ ДЛЯ ПФУ
+                let currentFlow = 0.5 + Math.random() * 1.5; // м³/хв
+                totalFlowAccum += currentFlow * (0.5 + Math.random() * 0.5) / 60;
+                totalTimeAccum += 5 + Math.random() * 10;
+                
                 data.push({
                     timestamp: Date.now() - (count - i) * 60000,
                     speed: Number(Math.max(0, speed).toFixed(1)),
                     temperature: Number(temp.toFixed(1)),
-                    pressure: Number(pressure.toFixed(1))
+                    pressure: Number(pressure.toFixed(1)),
+                    currentFlow: Number(Math.max(0.1, currentFlow).toFixed(2)),
+                    totalFlow: Number(Math.max(0, totalFlowAccum).toFixed(2)),
+                    totalTime: Number(Math.max(0, totalTimeAccum).toFixed(0))
                 });
             }
             params = {
                 speed: Number(data[data.length-1].speed.toFixed(1)),
                 temperature: Number(data[data.length-1].temperature.toFixed(1)),
                 pressure: Number(data[data.length-1].pressure.toFixed(1)),
+                currentFlow: Number(data[data.length-1].currentFlow.toFixed(2)),
+                totalFlow: Number(data[data.length-1].totalFlow.toFixed(2)),
+                totalTime: Number(data[data.length-1].totalTime.toFixed(0)),
                 unit: 'м/с',
                 status: 'normal'
             };
@@ -307,27 +328,31 @@ for (let i = 1; i <= 10; i++) {
                 alarmLevels: { warning: 0.30, danger: 0.50, critical: 0.70 },
                 gps: { lat: coords.lat + latOffset + 0.02, lng: coords.lng + lngOffset + 0.02 }
             },
-            {
-                id: `wp${i}_vfu`,
-                type: 'vfu',
-                name: deviceTypes.vfu.name,
-                model: `VFU-${100 + i}`,
-                serial: `VFU-${2024000 + i}`,
-                value: Number(vfuData.params.speed.toFixed(1)),
-                status: 'normal',
-                channel: 'Швидкість потоку',
-                unit: deviceTypes.vfu.unit,
-                ip: `192.168.4.${220 + i}`,
-                port: 7000 + i,
-                uptime: Math.floor(Math.random() * 30) + 1,
-                lastUpdate: new Date(),
-                history: vfuData.data,
-                data: vfuData.params,
-                logs: generateRandomLogs('Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря', 20),
-                errors: Math.floor(Math.random() * 3),
-                alarmLevels: { warning: 5.0, danger: 8.0, critical: 10.0 },
-                gps: { lat: coords.lat + latOffset + 0.015, lng: coords.lng + lngOffset + 0.015 }
-            },
+		{
+    id: `wp${i}_vfu`,
+    type: 'vfu',
+    name: deviceTypes.vfu.name,
+    model: `VFU-${100 + i}`,
+    serial: `VFU-${2024000 + i}`,
+    value: Number(vfuData.params.speed.toFixed(1)),
+    status: 'normal',
+    channel: 'Швидкість потоку',
+    unit: deviceTypes.vfu.unit,
+    ip: `192.168.4.${220 + i}`,
+    port: 7000 + i,
+    uptime: Math.floor(Math.random() * 30) + 1,
+    lastUpdate: new Date(),
+    history: vfuData.data,
+    data: vfuData.params,
+    logs: generateRandomLogs('Повітряно-фільтрувальна установка (ПФУ) атмосферного повітря', 20),
+    errors: Math.floor(Math.random() * 3),
+    alarmLevels: { warning: 5.0, danger: 8.0, critical: 10.0 },
+    gps: { lat: coords.lat + latOffset + 0.015, lng: coords.lng + lngOffset + 0.015 },
+    // НОВІ ПАРАМЕТРИ
+    currentFlow: Number(vfuData.params.currentFlow || (0.5 + Math.random() * 1.5).toFixed(2)),
+    totalFlow: Number(vfuData.params.totalFlow || (Math.random() * 100).toFixed(2)),
+    totalTime: Number(vfuData.params.totalTime || (Math.random() * 3600 + 60).toFixed(0))
+},
             {
                 id: `wp${i}_weather`,
                 type: 'weather',
@@ -655,7 +680,46 @@ function loadRoles() {
         });
     }
 }
+// ========== ОНОВЛЕННЯ ДАНИХ VFU В РЕАЛЬНОМУ ЧАСІ ==========
+function updateVFUData(device) {
+    if (device.type !== 'vfu') return;
+    
+    // Оновлюємо значення з невеликими випадковими змінами
+    const currentFlow = (device.currentFlow || 0.5) + (Math.random() - 0.5) * 0.05;
+    const totalFlow = (device.totalFlow || 0) + currentFlow * (0.5 + Math.random() * 0.5) / 60;
+    const totalTime = (device.totalTime || 0) + 5 + Math.random() * 10;
+    
+    device.currentFlow = Number(Math.max(0.1, currentFlow).toFixed(2));
+    device.totalFlow = Number(Math.max(0, totalFlow).toFixed(2));
+    device.totalTime = Number(Math.max(0, totalTime).toFixed(0));
+    
+    // Оновлюємо в data
+    if (device.data) {
+        device.data.currentFlow = device.currentFlow;
+        device.data.totalFlow = device.totalFlow;
+        device.data.totalTime = device.totalTime;
+    }
+}
 
+// Додаємо в функцію оновлення всіх даних
+function updateAllDevicesData() {
+    allDevices.forEach(device => {
+        // ... оновлення для інших типів ...
+        
+        if (device.type === 'vfu') {
+            updateVFUData(device);
+        }
+    });
+}
+
+// Запускаємо оновлення кожні 10 секунд
+setInterval(() => {
+    updateAllDevicesData();
+    // Оновлюємо відображення, якщо відкрито VFU
+    if (currentMonitoringDevice && currentMonitoringDevice.type === 'vfu') {
+        showMonitoringRMDetail(currentMonitoringDevice.id);
+    }
+}, 10000);
 // ========== СИСТЕМА СПОВІЩЕНЬ ==========
 let notifications = [];
 let notificationId = 0;
@@ -1019,15 +1083,19 @@ function exportDeviceExcel(deviceId) {
                 'Активність (uSv/год)': h.activity || h.value
             }));
             break;
-        case 'vfu':
-            headers.push('Швидкість (м/с)', 'Температура (°C)', 'Тиск (гПа)');
-            exportData = device.history.map(h => ({
-                'Дата/Час': new Date(h.timestamp).toLocaleString(),
-                'Швидкість (м/с)': h.speed || h.value,
-                'Температура (°C)': h.temperature || 20,
-                'Тиск (гПа)': h.pressure || 1013
-            }));
-            break;
+	case 'vfu':
+    headers.push('Швидкість (м/с)', 'Температура (°C)', 'Тиск (гПа)', 
+                 'Поточна витрата (м³/хв)', 'Сумарна витрата (м³)', 'Час сесії (с)');
+    exportData = device.history.map(h => ({
+        'Дата/Час': new Date(h.timestamp).toLocaleString(),
+        'Швидкість (м/с)': h.speed || h.value || 0,
+        'Температура (°C)': h.temperature || 20,
+        'Тиск (гПа)': h.pressure || 1013,
+        'Поточна витрата (м³/хв)': h.currentFlow || device.currentFlow || 0,
+        'Сумарна витрата (м³)': h.totalFlow || device.totalFlow || 0,
+        'Час сесії (с)': h.totalTime || device.totalTime || 0
+    }));
+    break;
         case 'weather':
             headers.push('Температура (°C)', 'Вологість (%)', 'Швидкість вітру (м/с)', 'Тиск (гПа)');
             exportData = device.history.map(h => ({
@@ -1582,27 +1650,18 @@ function showMonitoringRMDetail(deviceId) {
     let chartsHtml = '';
 
     switch(device.type) {
-case 'gamma':
-    // Якщо увімкнено режим експерта - показуємо його
-    if (device.expertMode) {
-        renderExpertMode(device);
-        return;
-    }
-    // Стандартний режим
+	case 'gamma':
+    // Стандартний режим з картками
     infoCards = `
         <div class="info-card"><div class="info-label">📊 Потужність</div><div class="info-value" style="color:#4a9eff;">${typeof (device.data?.dose || device.value) === 'number' ? (device.data?.dose || device.value).toFixed(1) : device.value} ${device.unit}</div></div>
         <div class="info-card"><div class="info-label">⚡ Імпульси CPS</div><div class="info-value" style="color:#a78bfa;">${device.data?.cps ? Math.round(device.data.cps) : Math.round(device.value * 100)}</div></div>
         <div class="info-card"><div class="info-label">⏱️ Час роботи</div><div class="info-value" style="color:#e0e0e0;">${device.uptime || 0} днів</div></div>
         <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
     `;
+    // Відразу показуємо режим експерта (без графіків та кнопки)
     chartsHtml = `
-        <div class="chart-box"><div class="chart-title">📈 Потужність (uSv/год)</div><canvas id="monitoringMainChart"></canvas></div>
-        <div class="chart-box"><div class="chart-title">⚡ Імпульси CPS</div><canvas id="monitoringImpulseChart"></canvas></div>
-        <div class="chart-box" style="grid-column: 1 / -1;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div class="chart-title">🔬 Режим експерта</div>
-                <button onclick="toggleExpertMode('${device.id}')" class="btn-primary" style="background:#00ff41; color:#0a0a12; padding:5px 15px; font-size:12px;">⚡ УВІМКНУТИ РЕЖИМ ЕКСПЕРТА</button>
-            </div>
+        <div class="expert-mode-placeholder" style="grid-column: 1 / -1; margin-top: 10px;">
+            ${renderExpertModeHTML(device)}
         </div>
     `;
     break;
@@ -1619,19 +1678,38 @@ case 'gamma':
             `;
             break;
 
-        case 'vfu':
-            infoCards = `
-                <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#60a5fa;">${device.data?.temperature || 20} °C</div></div>
-                <div class="info-card"><div class="info-label">💨 Швидкість потоку</div><div class="info-value" style="color:#34d399;">${typeof (device.data?.speed || device.value) === 'number' ? (device.data?.speed || device.value).toFixed(1) : device.value} ${device.unit}</div></div>
-                <div class="info-card"><div class="info-label">📊 Тиск</div><div class="info-value" style="color:#f472b6;">${device.data?.pressure || 1013} гПа</div></div>
-                <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
-            `;
-            chartsHtml = `
-                <div class="chart-box"><div class="chart-title">🌡️ Температура (°C)</div><canvas id="monitoringMainChart"></canvas></div>
-                <div class="chart-box"><div class="chart-title">💨 Швидкість потоку (м/с)</div><canvas id="monitoringImpulseChart"></canvas></div>
-            `;
-            break;
-
+		case 'vfu':
+    infoCards = `
+        <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#60a5fa;">${device.data?.temperature || 20} °C</div></div>
+        <div class="info-card"><div class="info-label">💨 Швидкість потоку</div><div class="info-value" style="color:#34d399;">${typeof (device.data?.speed || device.value) === 'number' ? (device.data?.speed || device.value).toFixed(1) : device.value} ${device.unit}</div></div>
+        <div class="info-card"><div class="info-label">📊 Тиск</div><div class="info-value" style="color:#f472b6;">${device.data?.pressure || 1013} гПа</div></div>
+        <div class="info-card"><div class="info-label">💨 Поточна витрата</div><div class="info-value" style="color:#a78bfa;">${device.data?.currentFlow || device.currentFlow || 0} м³/хв</div></div>
+        <div class="info-card"><div class="info-label">📦 Сумарна витрата</div><div class="info-value" style="color:#fbbf24;">${device.data?.totalFlow || device.totalFlow || 0} м³</div></div>
+        <div class="info-card"><div class="info-label">⏱️ Час сесії</div><div class="info-value" style="color:#e0e0e0;">${formatTotalTime(device.data?.totalTime || device.totalTime || 0)}</div></div>
+        <div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
+    `;
+    chartsHtml = `
+        <div class="chart-box"><div class="chart-title">🌡️ Температура (°C)</div><canvas id="monitoringMainChart"></canvas></div>
+        <div class="chart-box"><div class="chart-title">💨 Швидкість потоку (м/с)</div><canvas id="monitoringImpulseChart"></canvas></div>
+        <div class="chart-box" style="grid-column: 1 / -1;">
+            <div class="chart-title">📊 Додаткові параметри ПФУ</div>
+            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin-top:10px;">
+                <div style="background:#2a2a3a; padding:15px; border-radius:8px; text-align:center;">
+                    <div style="font-size:12px; color:#8a8a9a;">💨 Поточна витрата</div>
+                    <div style="font-size:20px; font-weight:bold; color:#a78bfa;">${device.data?.currentFlow || device.currentFlow || 0} м³/хв</div>
+                </div>
+                <div style="background:#2a2a3a; padding:15px; border-radius:8px; text-align:center;">
+                    <div style="font-size:12px; color:#8a8a9a;">📦 Сумарна витрата (накопичений об'єм)</div>
+                    <div style="font-size:20px; font-weight:bold; color:#fbbf24;">${device.data?.totalFlow || device.totalFlow || 0} м³</div>
+                </div>
+                <div style="background:#2a2a3a; padding:15px; border-radius:8px; text-align:center;">
+                    <div style="font-size:12px; color:#8a8a9a;">⏱️ Загальний час прокачування</div>
+                    <div style="font-size:20px; font-weight:bold; color:#60a5fa;">${formatTotalTime(device.data?.totalTime || device.totalTime || 0)}</div>
+                </div>
+            </div>
+        </div>
+    `;
+    break;
         case 'weather':
             infoCards = `
                 <div class="info-card"><div class="info-label">🌡️ Температура</div><div class="info-value" style="color:#f97316;">${device.data?.temperature || 20} °C</div></div>
@@ -1645,7 +1723,20 @@ case 'gamma':
             `;
             break
     }
-
+function formatTotalTime(seconds) {
+    if (!seconds || seconds < 0) return '0с';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return `${hours}г ${minutes}хв ${secs}с`;
+    } else if (minutes > 0) {
+        return `${minutes}хв ${secs}с`;
+    } else {
+        return `${secs}с`;
+    }
+}
     const gpsInfo = device.gps ? `${device.gps.lat.toFixed(6)}, ${device.gps.lng.toFixed(6)}` : 'Немає даних';
 
     panel.innerHTML = `
@@ -1759,10 +1850,17 @@ function initMonitoringCharts(device) {
         let data = [];
 
         switch(device.type) {
-            case 'gamma':
-                label = `Потужність (${device.unit})`;
-                data = device.history.map(h => h.dose || h.value);
-                break;
+	case 'gamma':
+    // Для гамма-детектора НЕ створюємо графіки (вони не потрібні, бо є режим експерта)
+    if (monitoringChart) {
+        monitoringChart.destroy();
+        monitoringChart = null;
+    }
+    if (monitoringImpulseChart) {
+        monitoringImpulseChart.destroy();
+        monitoringImpulseChart = null;
+    }
+    return;
             case 'spectro':
                 label = `Активність (${device.unit})`;
                 data = device.history.map(h => h.activity || h.value);
@@ -2061,7 +2159,123 @@ function renderExpertMode(device) {
         drawExpertSpectrum(spectrumData);
     }, 150);
 }
+function renderExpertModeHTML(device) {
+    // Генеруємо спектр якщо його немає
+    if (!device.data?.spectrum) {
+        device.data = device.data || {};
+        device.data.spectrum = generateSpectrumData();
+    }
+    
+    let spectrumData = device.data.spectrum;
+    
+    // Оновлюємо статус
+    let statusText = '';
+    let statusClass = '';
+    const gammaValue = typeof device.value === 'number' ? device.value : 0;
+    if (gammaValue > 0.30) {
+        statusText = 'КРИТИЧНО!';
+        statusClass = 'critical';
+    } else if (gammaValue > 0.25) {
+        statusText = 'ПОПЕРЕДЖЕННЯ';
+        statusClass = 'warning';
+    } else {
+        statusText = 'НОРМА';
+        statusClass = 'normal';
+    }
 
+    // Розраховуємо показники
+    const dose = gammaValue;
+    const error = (Math.random() * 10 + 10).toFixed(0);
+    const load = Math.round(dose * 100 + Math.random() * 50 + 150);
+    const accumulationTime = Math.floor(Math.random() * 30 + 10);
+    const temperature = (20 + Math.random() * 5).toFixed(1);
+    
+    // Поточний час
+    const now = new Date();
+    const timeStr = now.toTimeString().slice(0,8);
+    const dateStr = now.toISOString().slice(0,10);
+
+    return `
+        <div class="expert-mode-container" style="background: #0d0d1a; border-radius: 12px; padding: 20px; border: 1px solid #00ff4133; margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #00ff4133; padding-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">⚡</span>
+                    <span style="font-weight: bold; color: #00ff41; font-size: 16px;">РЕЖИМ ЕКСПЕРТА</span>
+                    <span style="font-size: 11px; color: #8a8a9a; margin-left: 10px;">Детальний перегляд спектру</span>
+                </div>
+                <button onclick="refreshExpertSpectrum('${device.id}')" style="background: #4a9eff22; border: 1px solid #4a9eff; color: #4a9eff; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;">🔄 ОНОВИТИ</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- Ліва колонка - параметри -->
+                <div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 15px; background: #14141e; padding: 15px; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Потужність дози:</span>
+                            <span style="font-weight: bold; color: ${gammaValue > 0.30 ? '#ef4444' : (gammaValue > 0.25 ? '#fbbf24' : '#4ade80')}">${dose.toFixed(2)} мкЗв/год</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Похибка:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${error}%</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Завантаження:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${load} імп./с</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Самоконтроль:</span>
+                            <span style="font-weight: bold; color: #4ade80;">✅ ОК</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Накопичення:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${accumulationTime} с</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Температура:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${temperature} °C</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Час початку:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${timeStr}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                            <span style="color: #8a8a9a; font-size: 12px;">Дата:</span>
+                            <span style="font-weight: bold; color: #e0e0e0;">${dateStr}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button onclick="startExpertAccumulation('${device.id}')" style="background: #4a9eff; border: none; padding: 6px 16px; border-radius: 6px; color: white; cursor: pointer;">📊 НОВЕ НАКОПИЧЕННЯ</button>
+                        <button onclick="exportExpertData('${device.id}')" style="background: #3a3a4a; border: none; padding: 6px 16px; border-radius: 6px; color: #e0e0e0; cursor: pointer;">📤 ОБМІН</button>
+                    </div>
+                </div>
+
+                <!-- Права колонка - спектр -->
+                <div>
+                    <div style="background: #0d0d1a; border-radius: 8px; padding: 10px; border: 1px solid #1a1a2e;">
+                        <div style="display: flex; justify-content: space-between; color: #8a8a9a; font-size: 10px; margin-bottom: 5px;">
+                            <span>ЕНЕРГЕТИЧНИЙ СПЕКТР</span>
+                            <span>Cs-137 / Co-60</span>
+                        </div>
+                        <canvas id="expertSpectrumCanvas" style="width: 100%; height: 160px;"></canvas>
+                        <div style="display: flex; justify-content: space-between; color: #8a8a9a; font-size: 9px; margin-top: 2px;">
+                            <span>0</span>
+                            <span>200</span>
+                            <span>400</span>
+                            <span>600</span>
+                            <span>800</span>
+                            <span>1000</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 20px; margin-top: 10px; font-size: 12px; color: #8a8a9a;">
+                        <div>📡 ${device.name}</div>
+                        <div>🔢 ${device.serial || 'N/A'}</div>
+                        <div>Статус: <span style="font-weight: bold; color: ${gammaValue > 0.30 ? '#ef4444' : (gammaValue > 0.25 ? '#fbbf24' : '#4ade80')}">${statusText}</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
 function drawExpertSpectrum(spectrumData) {
     const canvas = document.getElementById('expertSpectrumCanvas');
     if (!canvas) {
