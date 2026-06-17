@@ -10,7 +10,452 @@ body {
     color: #e0e0e0;
     min-height: 100vh;
 }
+/* Знайдіть або додайте цей стиль */
+.map-header,
+.map-title,
+h1, h2, h3 {
+    color: #ffffff !important;
+}
 
+/* Або для конкретного заголовка */
+.interactive-map-title {
+    color: #ffffff !important;
+}
+/* GPS інформація */
+.gps-info {
+    padding: 8px 15px;
+    background: #1a1a2a;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 13px;
+    color: #8a8a9a;
+    border: 1px solid #2a2a3a;
+}
+
+.gps-info span {
+    color: #e0e0e0;
+}
+
+/* Статус приладу */
+.device-status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.device-status-badge.normal {
+    background: #22c55e33;
+    color: #22c55e;
+}
+
+.device-status-badge.warning {
+    background: #fbbf2433;
+    color: #fbbf24;
+}
+
+.device-status-badge.danger {
+    background: #f8717133;
+    color: #f87171;
+}
+
+.device-status-badge.critical {
+    background: #ef444433;
+    color: #ef4444;
+}
+
+/* Кнопки експорту */
+.detail-buttons .btn-primary {
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.detail-buttons .btn-primary:hover {
+    opacity: 0.8;
+    transform: scale(1.02);
+}
+
+/* Час роботи */
+.device-uptime {
+    padding: 4px 12px;
+    background: #1a1a2a;
+    border-radius: 20px;
+    font-size: 12px;
+    color: #8a8a9a;
+    border: 1px solid #2a2a3a;
+}
+
+/* Вкладки моніторингу */
+.monitoring-tabs {
+    display: flex;
+    gap: 0;
+    background: #1a1a2a;
+    border-bottom: 1px solid #3a3a4a;
+    padding: 0 20px;
+}
+
+.monitoring-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: #8a8a9a;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s;
+    border-bottom: 2px solid transparent;
+}
+
+.monitoring-tab:hover {
+    color: #e0e0e0;
+}
+
+.monitoring-tab.active {
+    color: #4a9eff;
+    border-bottom-color: #4a9eff;
+}
+
+/* Дворядна структура моніторингу */
+.monitoring-split-layout {
+    display: flex;
+    height: calc(100% - 50px);
+    background: #1a1a2a;
+}
+
+.monitoring-sidebar {
+    width: 380px;
+    min-width: 320px;
+    background: #1e1e2e;
+    border-right: 1px solid #3a3a4a;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.workplaces-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.monitoring-detail-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background: #1a1a2a;
+}
+/* Вкладки моніторингу */
+.monitoring-tabs {
+    display: flex;
+    gap: 0;
+    background: #1a1a2a;
+    border-bottom: 1px solid #3a3a4a;
+    padding: 0 20px;
+}
+
+.monitoring-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: #8a8a9a;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s;
+    border-bottom: 2px solid transparent;
+}
+
+.monitoring-tab:hover {
+    color: #e0e0e0;
+}
+
+.monitoring-tab.active {
+    color: #4a9eff;
+    border-bottom-color: #4a9eff;
+}
+
+/* Дворядна структура моніторингу */
+.monitoring-split-layout {
+    display: flex;
+    height: calc(100% - 50px);
+    background: #1a1a2a;
+}
+
+.monitoring-sidebar {
+    width: 380px;
+    min-width: 320px;
+    background: #1e1e2e;
+    border-right: 1px solid #3a3a4a;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.workplaces-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.monitoring-detail-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background: #1a1a2a;
+}
+
+/* Інформаційна сітка */
+.detail-info-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.info-card {
+    background: #252535;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+}
+
+.info-label {
+    font-size: 12px;
+    color: #8a8a9a;
+    margin-bottom: 5px;
+}
+
+.info-value {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+/* Рівні тривоги */
+.alarm-levels-bar {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    padding: 10px 15px;
+    background: #252535;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+/* Сітка графіків */
+.monitoring-charts-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.chart-box {
+    background: #252535;
+    border-radius: 10px;
+    padding: 15px;
+    min-height: 200px;
+}
+
+.chart-box canvas {
+    height: 200px;
+    width: 100%;
+}
+
+/* Вкладка Alarms */
+.alarms-tab {
+    background: #252535;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.alarms-tab-header {
+    padding: 12px 15px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #2a2a3a;
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+.alarms-tab-content {
+    display: none;
+    padding: 15px;
+}
+
+.alarms-tab-content.show {
+    display: block;
+}
+
+.alarm-item {
+    display: flex;
+    gap: 15px;
+    padding: 8px 0;
+    border-bottom: 1px solid #2a2a3a;
+}
+
+.alarm-item:last-child {
+    border-bottom: none;
+}
+
+.alarm-time {
+    font-size: 12px;
+    color: #8a8a9a;
+    min-width: 80px;
+}
+
+.alarm-status {
+    font-size: 16px;
+}
+
+.alarm-message {
+    color: #e0e0e0;
+}
+
+/* Стилі для списку РМ */
+.workplace-group {
+    margin-bottom: 15px;
+    border-radius: 10px;
+    background: #252535;
+    overflow: hidden;
+}
+
+.workplace-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: #2a2a3a;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.workplace-header:hover {
+    background: #353545;
+}
+
+.workplace-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.workplace-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.workplace-name {
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.workplace-location {
+    font-size: 12px;
+    color: #8a8a9a;
+}
+
+.workplace-count {
+    font-size: 12px;
+    color: #8a8a9a;
+    background: #1e1e2e;
+    padding: 4px 8px;
+    border-radius: 20px;
+}
+
+.workplace-devices {
+    display: none;
+}
+
+.workplace-devices.show {
+    display: block;
+}
+
+/* Стилі для приладу в списку */
+.device-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 15px;
+    border-bottom: 1px solid #2a2a3a;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.device-item:hover {
+    background: #2f2f3f;
+}
+
+.device-icon {
+    font-size: 20px;
+    width: 35px;
+    text-align: center;
+}
+
+.device-info {
+    flex: 1;
+}
+
+.device-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+.device-model {
+    font-size: 11px;
+    color: #8a8a9a;
+}
+
+.device-value {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.device-status {
+    width: 20px;
+}
+
+/* Плейсхолдер */
+.detail-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 400px;
+    color: #8a8a9a;
+}
+
+.placeholder-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.placeholder-text {
+    font-size: 16px;
+}
+
+/* Адаптивність */
+@media (max-width: 900px) {
+    .monitoring-charts-grid {
+        grid-template-columns: 1fr;
+    }
+    .detail-info-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .monitoring-sidebar {
+        width: 280px;
+        min-width: 200px;
+    }
+}
 /* ========== ЛОГІН ========== */
 .login-container {
     display: flex;
@@ -76,7 +521,161 @@ body {
     height: 100vh;
     width: 100%;
 }
+/* Дворядна структура моніторингу */
+.monitoring-split-layout {
+    display: flex;
+    height: calc(100% - 50px);
+    background: #1a1a2a;
+}
 
+.monitoring-sidebar {
+    width: 380px;
+    min-width: 320px;
+    background: #1e1e2e;
+    border-right: 1px solid #3a3a4a;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.workplaces-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.monitoring-detail-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background: #1a1a2a;
+}
+
+/* Стилі для списку РМ */
+.workplace-group {
+    margin-bottom: 15px;
+    border-radius: 10px;
+    background: #252535;
+    overflow: hidden;
+}
+
+.workplace-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: #2a2a3a;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.workplace-header:hover {
+    background: #353545;
+}
+
+.workplace-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.workplace-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.workplace-name {
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+.workplace-location {
+    font-size: 12px;
+    color: #8a8a9a;
+}
+
+.workplace-count {
+    font-size: 12px;
+    color: #8a8a9a;
+    background: #1e1e2e;
+    padding: 4px 8px;
+    border-radius: 20px;
+}
+
+.workplace-devices {
+    display: none;
+}
+
+.workplace-devices.show {
+    display: block;
+}
+
+/* Стилі для приладу в списку */
+.device-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 15px;
+    border-bottom: 1px solid #2a2a3a;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.device-item:hover {
+    background: #2f2f3f;
+}
+
+.device-icon {
+    font-size: 20px;
+    width: 35px;
+    text-align: center;
+}
+
+.device-info {
+    flex: 1;
+}
+
+.device-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #e0e0e0;
+}
+
+.device-model {
+    font-size: 11px;
+    color: #8a8a9a;
+}
+
+.device-value {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.device-status {
+    width: 20px;
+}
+
+/* Плейсхолдер */
+.detail-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 400px;
+    color: #8a8a9a;
+}
+
+.placeholder-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.placeholder-text {
+    font-size: 16px;
+}
 /* Sidebar */
 .sidebar {
     width: 280px;
@@ -1102,3 +1701,230 @@ canvas {
 .alarm-color-preview.normal { background: #4ade80; }
 .alarm-color-preview.warning { background: #fbbf24; }
 .alarm-color-preview.danger { background: #f87171; }
+.leaflet-popup-content-wrapper,
+.leaflet-popup-content,
+.leaflet-popup-content * {
+    color: #ffffff !important;
+}
+
+.leaflet-popup-tip {
+    background: white !important; /* Якщо стрілка теж має бути білою */
+}
+/* ========== РЕЖИМ ЕКСПЕРТА ДЛЯ ГАММА-ДЕТЕКТОРА ========== */
+.expert-mode-container {
+    background: #0a0a12;
+    border-radius: 12px;
+    padding: 20px;
+    color: #00ff41;
+    font-family: 'Courier New', monospace;
+    border: 1px solid #00ff4133;
+}
+
+.expert-mode-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #00ff4133;
+    margin-bottom: 15px;
+}
+
+.expert-mode-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #00ff41;
+    letter-spacing: 2px;
+}
+
+.expert-mode-title span {
+    color: #4a9eff;
+}
+
+.expert-mode-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.expert-mode-buttons button {
+    background: #1a1a2e;
+    border: 1px solid #00ff4133;
+    color: #00ff41;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    transition: all 0.3s;
+}
+
+.expert-mode-buttons button:hover {
+    background: #00ff4122;
+    border-color: #00ff41;
+}
+
+.expert-mode-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.expert-mode-params {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 30px;
+    background: #0d0d1a;
+    padding: 12px 16px;
+    border-radius: 6px;
+    border: 1px solid #1a1a2e;
+}
+
+.expert-mode-params .param-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #1a1a2e;
+}
+
+.expert-mode-params .param-label {
+    color: #8a8a9a;
+}
+
+.expert-mode-params .param-value {
+    color: #00ff41;
+    font-weight: bold;
+}
+
+.expert-mode-params .param-value.ok {
+    color: #4ade80;
+}
+
+.expert-mode-params .param-value.warning {
+    color: #fbbf24;
+}
+
+.expert-mode-spectrum {
+    background: #0d0d1a;
+    border-radius: 6px;
+    padding: 10px;
+    border: 1px solid #1a1a2e;
+    position: relative;
+}
+
+.expert-mode-spectrum canvas {
+    width: 100% !important;
+    height: 200px !important;
+}
+
+.expert-mode-spectrum-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #5a5a6a;
+    padding: 4px 10px 0;
+}
+
+.expert-mode-cursor {
+    display: flex;
+    gap: 20px;
+    padding: 8px 12px;
+    background: #0d0d1a;
+    border-radius: 4px;
+    margin-top: 8px;
+    font-size: 13px;
+    border: 1px solid #1a1a2e;
+}
+
+.expert-mode-cursor .cursor-item {
+    display: flex;
+    gap: 6px;
+}
+
+.expert-mode-cursor .cursor-label {
+    color: #5a5a6a;
+}
+
+.expert-mode-cursor .cursor-value {
+    color: #00ff41;
+    font-weight: bold;
+}
+
+.expert-mode-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.expert-mode-controls button {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #e0e0e0;
+    padding: 6px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    transition: all 0.3s;
+    flex: 1;
+    min-width: 100px;
+}
+
+.expert-mode-controls button:hover {
+    background: #2a2a3e;
+    border-color: #4a4a5e;
+}
+
+.expert-mode-controls button.primary {
+    background: #00ff4122;
+    border-color: #00ff41;
+    color: #00ff41;
+}
+
+.expert-mode-controls button.primary:hover {
+    background: #00ff4133;
+}
+
+.expert-mode-controls button.danger {
+    background: #ef444422;
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.expert-mode-controls button.danger:hover {
+    background: #ef444433;
+}
+
+.expert-mode-device-info {
+    display: flex;
+    justify-content: flex-end;
+    gap: 20px;
+    font-size: 12px;
+    color: #5a5a6a;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #1a1a2e;
+}
+
+.expert-mode-device-info span {
+    color: #8a8a9a;
+}
+
+/* Адаптивність */
+@media (max-width: 768px) {
+    .expert-mode-grid {
+        grid-template-columns: 1fr;
+    }
+    .expert-mode-params {
+        grid-template-columns: 1fr;
+    }
+    .expert-mode-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+    .expert-mode-buttons {
+        flex-wrap: wrap;
+    }
+}

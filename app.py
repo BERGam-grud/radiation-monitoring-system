@@ -154,6 +154,11 @@ def login():
     else:
         return jsonify({'error': 'Невірний email або пароль'}), 401
 
+# Додатковий маршрут для сумісності з фронтендом (якщо він шукає /api/auth/login)
+@app.route('/api/auth/login', methods=['POST'])
+def auth_login():
+    return login()
+
 # ========== МАРШРУТИ РОБОЧИХ МІСЦЬ ТА ПРИЛАДІВ ==========
 @app.route('/api/workplaces', methods=['GET', 'POST'])
 def workplaces():
