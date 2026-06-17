@@ -1643,7 +1643,7 @@ case 'gamma':
                 <div class="chart-box"><div class="chart-title">🌡️ Температура (°C)</div><canvas id="monitoringMainChart"></canvas></div>
                 <div class="chart-box"><div class="chart-title">💧 Вологість (%)</div><canvas id="monitoringImpulseChart"></canvas></div>
             `;
-            break;<div class="info-card"><div class="info-label">📡 Статус</div><div class="info-value ${statusClass}">${statusText}</div></div>
+            break
     }
 
     const gpsInfo = device.gps ? `${device.gps.lat.toFixed(6)}, ${device.gps.lng.toFixed(6)}` : 'Немає даних';
