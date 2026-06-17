@@ -1710,3 +1710,221 @@ canvas {
 .leaflet-popup-tip {
     background: white !important; /* Якщо стрілка теж має бути білою */
 }
+/* ========== РЕЖИМ ЕКСПЕРТА ДЛЯ ГАММА-ДЕТЕКТОРА ========== */
+.expert-mode-container {
+    background: #0a0a12;
+    border-radius: 12px;
+    padding: 20px;
+    color: #00ff41;
+    font-family: 'Courier New', monospace;
+    border: 1px solid #00ff4133;
+}
+
+.expert-mode-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #00ff4133;
+    margin-bottom: 15px;
+}
+
+.expert-mode-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #00ff41;
+    letter-spacing: 2px;
+}
+
+.expert-mode-title span {
+    color: #4a9eff;
+}
+
+.expert-mode-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.expert-mode-buttons button {
+    background: #1a1a2e;
+    border: 1px solid #00ff4133;
+    color: #00ff41;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    transition: all 0.3s;
+}
+
+.expert-mode-buttons button:hover {
+    background: #00ff4122;
+    border-color: #00ff41;
+}
+
+.expert-mode-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.expert-mode-params {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 30px;
+    background: #0d0d1a;
+    padding: 12px 16px;
+    border-radius: 6px;
+    border: 1px solid #1a1a2e;
+}
+
+.expert-mode-params .param-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #1a1a2e;
+}
+
+.expert-mode-params .param-label {
+    color: #8a8a9a;
+}
+
+.expert-mode-params .param-value {
+    color: #00ff41;
+    font-weight: bold;
+}
+
+.expert-mode-params .param-value.ok {
+    color: #4ade80;
+}
+
+.expert-mode-params .param-value.warning {
+    color: #fbbf24;
+}
+
+.expert-mode-spectrum {
+    background: #0d0d1a;
+    border-radius: 6px;
+    padding: 10px;
+    border: 1px solid #1a1a2e;
+    position: relative;
+}
+
+.expert-mode-spectrum canvas {
+    width: 100% !important;
+    height: 200px !important;
+}
+
+.expert-mode-spectrum-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #5a5a6a;
+    padding: 4px 10px 0;
+}
+
+.expert-mode-cursor {
+    display: flex;
+    gap: 20px;
+    padding: 8px 12px;
+    background: #0d0d1a;
+    border-radius: 4px;
+    margin-top: 8px;
+    font-size: 13px;
+    border: 1px solid #1a1a2e;
+}
+
+.expert-mode-cursor .cursor-item {
+    display: flex;
+    gap: 6px;
+}
+
+.expert-mode-cursor .cursor-label {
+    color: #5a5a6a;
+}
+
+.expert-mode-cursor .cursor-value {
+    color: #00ff41;
+    font-weight: bold;
+}
+
+.expert-mode-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+}
+
+.expert-mode-controls button {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #e0e0e0;
+    padding: 6px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    transition: all 0.3s;
+    flex: 1;
+    min-width: 100px;
+}
+
+.expert-mode-controls button:hover {
+    background: #2a2a3e;
+    border-color: #4a4a5e;
+}
+
+.expert-mode-controls button.primary {
+    background: #00ff4122;
+    border-color: #00ff41;
+    color: #00ff41;
+}
+
+.expert-mode-controls button.primary:hover {
+    background: #00ff4133;
+}
+
+.expert-mode-controls button.danger {
+    background: #ef444422;
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+.expert-mode-controls button.danger:hover {
+    background: #ef444433;
+}
+
+.expert-mode-device-info {
+    display: flex;
+    justify-content: flex-end;
+    gap: 20px;
+    font-size: 12px;
+    color: #5a5a6a;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #1a1a2e;
+}
+
+.expert-mode-device-info span {
+    color: #8a8a9a;
+}
+
+/* Адаптивність */
+@media (max-width: 768px) {
+    .expert-mode-grid {
+        grid-template-columns: 1fr;
+    }
+    .expert-mode-params {
+        grid-template-columns: 1fr;
+    }
+    .expert-mode-header {
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+    .expert-mode-buttons {
+        flex-wrap: wrap;
+    }
+}
